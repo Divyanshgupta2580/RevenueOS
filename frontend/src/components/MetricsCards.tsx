@@ -57,13 +57,13 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
       {/* Incremental Revenue */}
       <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden">
         <div className="flex items-center justify-between text-zinc-400 mb-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider">Incremental Lift</span>
+          <span className="text-xs font-medium uppercase tracking-wider">Estimated Lift</span>
           <Zap className="w-3.5 h-3.5 text-cyan-400" />
         </div>
         <div className="text-xl font-semibold tracking-tight text-cyan-400 font-mono">
           {loading ? "..." : formatPaiseToRupees(incremental)}
         </div>
-        <div className="text-[11px] text-zinc-500 mt-1">Measured lift (Y - X)</div>
+        <div className="text-[11px] text-zinc-500 mt-1">Above baseline assumption</div>
       </div>
 
       {/* Recovery Rate */}

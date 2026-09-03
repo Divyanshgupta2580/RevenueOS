@@ -154,10 +154,12 @@ class DecisionRepository:
             raise DatabaseError("decision_id and payment_id are required.")
 
         now = datetime.now(UTC)
+        from django.conf import settings
+        default_model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
         doc = {
             "decision_id": decision_id,
             "payment_id": payment_id,
-            "model_version": decision.get("model_version", "gemini-2.5-flash"),
+            "model_version": decision.get("model_version", default_model),
             "ai_recommendation": decision.get("ai_recommendation", {}),
             "policy_decision": decision.get("policy_decision", {}),
             "created_at": decision.get("created_at", now),

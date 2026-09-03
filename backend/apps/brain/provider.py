@@ -21,7 +21,7 @@ class GeminiProvider:
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         self.api_key = api_key or getattr(settings, "GEMINI_API_KEY", "")
-        self.model_name = model or getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
+        self.model_name = model or getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
         self._client: genai.Client | None = None
 
     def _get_client(self) -> genai.Client | None:

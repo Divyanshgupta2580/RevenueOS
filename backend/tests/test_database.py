@@ -116,7 +116,7 @@ def test_decision_repository_create_and_get(mock_db) -> None:
     decision_data = {
         "decision_id": "dec_test_001",
         "payment_id": "pay_test_001",
-        "model_version": "gemini-2.5-flash",
+        "model_version": "gemini-2.0-flash",
         "ai_recommendation": {
             "action": "PAYMENT_LINK",
             "confidence": 0.85,

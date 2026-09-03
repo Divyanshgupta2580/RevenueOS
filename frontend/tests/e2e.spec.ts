@@ -3,19 +3,26 @@
  *
  * Covers:
  * 1. Unauthenticated redirect to /login
- * 2. Login flow with Cloudflare Turnstile bot protection
- * 3. Command Center dashboard layout and 5 primary KPI cards
- * 4. Revenue Radar ranking, search filtering, and ERV ordering
- * 5. Opportunity Detail Drawer with Gemini Recovery Brain analysis
- * 6. Guarded Autopilot execution gating and decision ledger
- * 7. Outcome metrics baseline vs RevenueOS incremental lift
- * 8. Zero emojis and accessibility compliance
+ * 2. Login page renders credentials and Turnstile widget
+ * 3. Missing Turnstile token blocks submission with disabled state and security error
+ * 4. Command Center dashboard layout and 5 primary KPI cards
+ * 5. Navigation tabs switch seamlessly between Radar, Ledger, and Metrics
+ * 6. Truthful empty states render when no data exists (No Dummy Data)
+ * 7. Zero emojis across all rendered text content
  */
 
 import { test, expect } from "@playwright/test";
 
 test.describe("RevenueOS End-to-End User Journey", () => {
   test("1. Unauthenticated access redirects to /login", async ({ page }) => {
+    await page.route("**/api/auth/me/", async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ authenticated: false }),
+      });
+    });
+
     await page.goto("/");
     await expect(page).toHaveURL(/.*login/);
     await expect(page.locator("h1")).toContainText("RevenueOS");
@@ -29,50 +36,51 @@ test.describe("RevenueOS End-to-End User Journey", () => {
     await expect(page.locator("text=Bot Verification")).toBeVisible();
   });
 
-  test("3. Missing Turnstile token blocks submission with error alert", async ({ page }) => {
+  test("3. Missing Turnstile token blocks submission with disabled state and security alert", async ({ page }) => {
     await page.goto("/login");
     await page.locator("input[type='email']").fill("operator@revenueos.local");
     await page.locator("input[type='password']").fill("OperatorPass123!");
-    await page.locator("button[type='submit']").click();
 
+    // Button is disabled when Turnstile verification has not completed
+    await expect(page.locator("button[type='submit']")).toBeDisabled();
+
+    // Form submission without token triggers client-side validation alert
+    await page.locator("form").dispatchEvent("submit");
     await expect(page.locator("text=Please complete the Cloudflare security verification.")).toBeVisible();
   });
 
   test("4. Command Center displays header, connection badge, and 5 KPI cards", async ({ page }) => {
-    // Navigate with authenticated session cookie
-    await page.context().addCookies([
-      {
-        name: "session_token",
-        value: "mock_test_operator_token",
-        domain: "localhost",
-        path: "/",
-        httpOnly: true,
-        secure: false,
-        sameSite: "Lax",
-      },
-    ]);
+    await page.route("**/api/auth/me/", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          user: { username: "operator", role: "operator" },
+        }),
+      });
+    });
 
     await page.goto("/");
     await expect(page.locator("header")).toBeVisible();
-    await expect(page.locator("text=Revenue at Risk")).toBeVisible();
-    await expect(page.locator("text=Expected Recoverable (ERV)")).toBeVisible();
+    await expect(page.getByText("Revenue at Risk", { exact: true })).toBeVisible();
+    await expect(page.locator("text=Expected Recoverable")).toBeVisible();
     await expect(page.locator("text=Actually Recovered")).toBeVisible();
-    await expect(page.locator("text=Incremental Lift")).toBeVisible();
+    await expect(page.locator("text=Estimated Lift")).toBeVisible();
     await expect(page.locator("text=Recovery Rate")).toBeVisible();
   });
 
   test("5. Navigation tabs switch seamlessly between Radar, Ledger, and Metrics", async ({ page }) => {
-    await page.context().addCookies([
-      {
-        name: "session_token",
-        value: "mock_test_operator_token",
-        domain: "localhost",
-        path: "/",
-        httpOnly: true,
-        secure: false,
-        sameSite: "Lax",
-      },
-    ]);
+    await page.route("**/api/auth/me/", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          user: { username: "operator", role: "operator" },
+        }),
+      });
+    });
 
     await page.goto("/");
 
@@ -90,17 +98,16 @@ test.describe("RevenueOS End-to-End User Journey", () => {
   });
 
   test("6. Truthful empty states render when no data exists (No Dummy Data)", async ({ page }) => {
-    await page.context().addCookies([
-      {
-        name: "session_token",
-        value: "mock_test_operator_token",
-        domain: "localhost",
-        path: "/",
-        httpOnly: true,
-        secure: false,
-        sameSite: "Lax",
-      },
-    ]);
+    await page.route("**/api/auth/me/", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          user: { username: "operator", role: "operator" },
+        }),
+      });
+    });
 
     await page.goto("/");
     // Verifies truthful empty state instead of fake demo data

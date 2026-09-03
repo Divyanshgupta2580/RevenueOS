@@ -120,7 +120,7 @@ export default function OpportunityDrawer({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400" />
-              <h3 className="text-sm font-semibold text-white">Recovery Brain (Gemini 2.5)</h3>
+              <h3 className="text-sm font-semibold text-white">Recovery Brain (Gemini Flash)</h3>
             </div>
             <button
               onClick={handleAnalyze}
@@ -140,9 +140,21 @@ export default function OpportunityDrawer({
             <div className="space-y-3 mt-3">
               <div className="flex items-center justify-between p-2.5 bg-zinc-900 rounded border border-zinc-800">
                 <span className="text-xs text-zinc-400">Recommended Bounded Action</span>
-                <span className="px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  {recommendation.action}
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {recommendation.action}
+                  </span>
+                  {recommendation.action === "RETRY" && (
+                    <span className="text-[9px] font-mono text-zinc-500 mt-0.5">
+                      Simulated Test Action
+                    </span>
+                  )}
+                  {recommendation.action === "PAYMENT_LINK" && (
+                    <span className="text-[9px] font-mono text-blue-400 mt-0.5">
+                      Razorpay Test API
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
                 <span>Model Confidence</span>

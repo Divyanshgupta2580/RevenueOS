@@ -61,3 +61,17 @@ def test_calculate_expected_recovery_value_bounds() -> None:
         calculate_expected_recovery_value(1000, -0.1, 0.5)
     with pytest.raises(ValueError, match="p_action_success must be in"):
         calculate_expected_recovery_value(1000, 0.5, 1.5)
+
+
+def test_money_boundary_amounts_and_rounding() -> None:
+    """Ensure boundary amounts (0 paise, 1 paisa, large amounts) and rounding are exact."""
+    # Zero amount
+    assert calculate_expected_recovery_value(0, 0.5, 0.5) == 0
+
+    # Fractional rounding (ROUND_HALF_EVEN / Banker's rounding)
+    assert calculate_expected_recovery_value(1, 0.5, 0.5) == 0  # 0.25 -> 0
+    assert calculate_expected_recovery_value(2, 0.5, 0.5) == 0  # 0.50 -> 0 (nearest even integer)
+    assert calculate_expected_recovery_value(6, 0.5, 0.5) == 2  # 1.50 -> 2 (nearest even integer)
+    assert calculate_expected_recovery_value(10, 0.5, 0.5) == 2  # 2.50 -> 2 (nearest even integer)
+    assert calculate_expected_recovery_value(14, 0.5, 0.5) == 4  # 3.50 -> 4 (nearest even integer)
+

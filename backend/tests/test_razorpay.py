@@ -180,6 +180,7 @@ def test_executor_executes_retry(mock_payment) -> None:
     )
 
     assert outcome["status"] == "EXECUTED"
+    assert outcome["result"]["executionType"] == "SIMULATED_TEST_ACTION"
     payment = PaymentRepository.get_by_id("pay_rzp_test_001")
     assert payment is not None
     assert payment["retry_count"] == 1

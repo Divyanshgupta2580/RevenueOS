@@ -72,9 +72,20 @@ export default function DecisionLedger({ decisions, loading }: DecisionLedgerPro
                       {d.paymentId}
                     </td>
                     <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                        {d.aiRecommendation?.action || "RETRY"}
-                      </span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 w-max">
+                          {d.aiRecommendation?.action || "RETRY"}
+                        </span>
+                        {d.aiRecommendation?.action === "RETRY" ? (
+                          <span className="text-[9px] font-mono text-zinc-500">
+                            Simulated Test Action
+                          </span>
+                        ) : d.aiRecommendation?.action === "PAYMENT_LINK" ? (
+                          <span className="text-[9px] font-mono text-blue-400">
+                            Razorpay Test API
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="py-3 px-4 font-mono text-zinc-300">
                       {d.aiRecommendation?.confidence

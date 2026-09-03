@@ -47,43 +47,56 @@ export default function MetricsView({ metrics }: MetricsViewProps) {
       ) : (
         <>
           {/* Comparative Metrics Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Baseline */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Baseline Assumption */}
             <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d]">
               <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-                Baseline Control Recovery (X)
+                Baseline Assumption (X)
               </span>
               <div className="text-2xl font-bold font-mono text-zinc-400 mt-1">
                 {formatPaiseToRupees(baseline)}
               </div>
               <p className="text-[11px] text-zinc-500 mt-1.5 leading-relaxed">
-                Standard unguided automated retry baseline (~8% historical benchmark).
+                8% heuristic evaluation model (assumed unguided retry rate; not empirical merchant data).
               </p>
             </div>
 
-            {/* RevenueOS Actual */}
+            {/* Observed Test-Mode Recovery */}
             <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden">
               <span className="text-xs font-medium uppercase tracking-wider text-emerald-400">
-                RevenueOS Measured Recovery (Y)
+                Observed Recovery (Y)
               </span>
               <div className="text-2xl font-bold font-mono text-emerald-400 mt-1">
                 {formatPaiseToRupees(actual)}
               </div>
               <p className="text-[11px] text-zinc-400 mt-1.5 leading-relaxed">
-                Actual verified recovery via Gemini recommendations and Guarded Autopilot.
+                Test-mode validated recovery via Gemini recommendations and Guarded Autopilot.
               </p>
             </div>
 
             {/* Incremental Lift */}
             <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden">
               <span className="text-xs font-medium uppercase tracking-wider text-cyan-400">
-                Net Incremental Lift (Y - X)
+                Estimated Lift (Y - X)
               </span>
               <div className="text-2xl font-bold font-mono text-cyan-400 mt-1">
                 {formatPaiseToRupees(incremental)}
               </div>
               <p className="text-[11px] text-zinc-400 mt-1.5 leading-relaxed">
-                Pure incremental revenue delivered above baseline control.
+                Recovery above the 8% baseline evaluation assumption.
+              </p>
+            </div>
+
+            {/* Production Merchant Status */}
+            <div className="p-4 rounded-lg bg-[#0e1117] border border-amber-500/20 relative overflow-hidden">
+              <span className="text-xs font-medium uppercase tracking-wider text-amber-400">
+                Production Recovery
+              </span>
+              <div className="text-lg font-bold font-mono text-amber-400 mt-1">
+                Not measured
+              </div>
+              <p className="text-[11px] text-zinc-500 mt-1.5 leading-relaxed">
+                Live production merchant traffic has not been connected in test mode.
               </p>
             </div>
           </div>

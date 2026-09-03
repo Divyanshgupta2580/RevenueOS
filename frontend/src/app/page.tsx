@@ -169,7 +169,7 @@ export default function CommandCenterPage() {
           {
             decisionId: (payload.decisionId as string) || `dec_${Date.now()}`,
             paymentId,
-            modelVersion: "gemini-2.5-flash",
+            modelVersion: (payload.modelVersion as string) || "gemini-2.0-flash",
             aiRecommendation: recommendation || {
               action: "RETRY",
               confidence: 0.8,
@@ -199,7 +199,7 @@ export default function CommandCenterPage() {
         {
           decisionId: (payload.decisionId as string) || `dec_${Date.now()}`,
           paymentId,
-          modelVersion: "gemini-2.5-flash",
+          modelVersion: (payload.modelVersion as string) || "gemini-2.0-flash",
           aiRecommendation: recommendation || {
             action: action as "RETRY" | "PAYMENT_LINK" | "REMINDER" | "STOP",
             confidence: 0.9,

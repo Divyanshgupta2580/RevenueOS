@@ -73,10 +73,16 @@ class RazorpayRecoveryExecutor:
 
             elif norm_action == "RETRY":
                 new_count = PaymentRepository.increment_retry_count(payment_id)
-                external_ref = f"retry_{payment_id}_{new_count}"
+                external_ref = f"sim_retry_{payment_id}_{new_count}"
                 result_payload = {
                     "retryAttempt": new_count,
                     "initiatedAt": now.isoformat(),
+                    "executionType": "SIMULATED_TEST_ACTION",
+                    "note": (
+                        "Simulated Test Action: Standard checkout payments require customer "
+                        "re-authentication. Direct automated retries without customer involvement "
+                        "are simulated in Test Mode for evaluation benchmarking."
+                    ),
                 }
                 new_recovery_status = "retrying"
 

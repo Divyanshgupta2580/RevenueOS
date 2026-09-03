@@ -44,6 +44,8 @@ node_modules/
 .next/
 out/
 .vercel/
+test-results/
+playwright-report/
 
 # OS & IDE
 .DS_Store

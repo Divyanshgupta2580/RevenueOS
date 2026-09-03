@@ -3,6 +3,10 @@
 Verifies end-to-end flow:
 Payment Ingestion -> Revenue Radar -> Gemini Recovery Brain -> Guarded Autopilot
 -> Razorpay Test Execution -> Signed Webhook Capture -> Outcome Metrics -> Live WebSocket Broadcast
+
+NOTE: All transactions and payment records in this test module are SYNTHETIC EVALUATION
+TEST FIXTURES used solely to verify algorithmic pipeline correctness and idempotency in an isolated
+in-memory test database. They never enter or pollute production database pathways.
 """
 
 import hashlib

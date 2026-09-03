@@ -157,7 +157,7 @@ def test_decision_persistence_for_audit(mock_db) -> None:
     decision_doc = {
         "decision_id": "dec_audit_001",
         "payment_id": "pay_audit_test",
-        "model_version": "gemini-2.5-flash",
+        "model_version": "gemini-2.0-flash",
         "ai_recommendation": {
             "action": "PAYMENT_LINK",
             "confidence": 0.85,

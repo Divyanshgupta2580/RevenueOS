@@ -51,7 +51,7 @@ Render Web Service (Django Channels + Uvicorn)
 | `RAZORPAY_KEY_SECRET` | Razorpay Test Mode Key Secret | Secret string |
 | `RAZORPAY_WEBHOOK_SECRET` | Secret configured in Razorpay Dashboard for webhook signatures | Webhook secret string |
 | `GEMINI_API_KEY` | Google AI Studio Gemini API Key | API key string |
-| `GEMINI_MODEL` | Gemini model variant | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Gemini model variant | `gemini-2.0-flash` |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile server verification secret | `0x4AAAAAA...` |
 
 ### B. Vercel Frontend Environment Variables

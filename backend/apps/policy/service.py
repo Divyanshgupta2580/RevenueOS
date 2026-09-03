@@ -36,10 +36,13 @@ class GuardedAutopilotService:
         decision_id = f"dec_{uuid.uuid4().hex[:12]}"
         now = datetime.now(UTC)
 
+        from django.conf import settings
+        model_version = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+
         decision_record = {
             "decision_id": decision_id,
             "payment_id": payment_id,
-            "model_version": "gemini-2.5-flash",
+            "model_version": model_version,
             "ai_recommendation": ai_recommendation or {},
             "policy_decision": verdict.to_dict(),
             "created_at": now,

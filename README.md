@@ -11,14 +11,14 @@
 RevenueOS is an AI Revenue Recovery Decision Engine designed to solve a critical fintech problem:
 When online payments fail, which transactions should merchants recover first, what is the safest and highest-value intervention, and how much incremental revenue did the system actually recover?
 
-RevenueOS bridges the gap between probabilistic AI reasoning and deterministic financial safety. It uses **Google Gemini 2.5 Flash** as an isolated advisory engine, gated behind an auditable, deterministic **Guarded Autopilot Policy Engine** that executes bounded recovery workflows via **Razorpay APIs and Signed Webhooks**.
+RevenueOS bridges the gap between probabilistic AI reasoning and deterministic financial safety. It uses **Google Gemini 2.0 Flash** (configurable via `GEMINI_MODEL`) as an isolated advisory engine, gated behind an auditable, deterministic **Guarded Autopilot Policy Engine** that executes bounded recovery workflows via **Razorpay Test Mode APIs, Simulated Test Actions, and Signed Webhooks**.
 
 ---
 
 ## 2. Problem Statement & Why It Matters
 
 ### The Core Problem
-Failed payments are not uniform:
+Failed payments in digital commerce are not uniform:
 1. **Naive Retries Cause Churn**: Unconditionally retrying hard declines (e.g. stolen card, expired card) wastes gateway retry fees and damages merchant reputation.
 2. **Untracked Opportunities**: High-value transactions with transient soft declines (e.g. temporary network timeouts, low balance) are frequently abandoned without proactive customer outreach.
 3. **Black-Box AI Danger**: Autonomous LLMs cannot be given direct access to mutate financial balances or execute banking transactions without deterministic guardrails.
@@ -28,13 +28,13 @@ Failed payments are not uniform:
 RevenueOS answers three questions deterministically:
 1. **Which revenue at risk should be recovered first?** (Deterministic ERV & Recoverability Score).
 2. **What is the safest and highest-value recovery action?** (Gemini recommendations gated by Guarded Autopilot rules).
-3. **How much incremental revenue was actually recovered?** (Transparent comparison of Baseline Control vs Actual Webhook-Captured Recovery).
+3. **How much incremental revenue was actually recovered?** (Transparent comparison of Baseline Assumption vs Observed Recovery).
 
 ---
 
 ## 3. High-Level Architecture & Technology Choices
 
-RevenueOS is engineered as a lean, explainable, production-ready modular monolith.
+RevenueOS is engineered as a lean, explainable, modular monolith.
 
 ```
 Browser (Operator Client)
@@ -77,12 +77,12 @@ RevenueOS Backend (Django Channels + Uvicorn)
   - Strictly operates on **integer minor currency units (paise)**. Floating-point arithmetic on currency is strictly forbidden.
 
 ### B. Recovery Brain (Gemini AI Advisory)
-- Single logical decision engine powered by the official `google-genai` SDK.
+- Single logical decision engine powered by the official `google-genai` SDK using `GEMINI_MODEL` (default: `gemini-2.0-flash`).
 - Constrained to a bounded decision space:
-  - `RETRY`: Automated gateway retry for transient network faults.
-  - `PAYMENT_LINK`: Issue dynamic Razorpay payment link for customer checkout completion.
-  - `REMINDER`: Dispatch non-intrusive reminder for pending authorization.
-  - `STOP`: Deliberate termination of recovery attempts for fraud or hard declines.
+  - `PAYMENT_LINK`: Issue dynamic Razorpay payment link for customer checkout completion (backed by Razorpay Test Mode API `POST /v1/payment_links`).
+  - `REMINDER`: Dispatch non-intrusive reminder for pending authorization (backed by Razorpay API `POST /v1/payment_links/:id/notify_by/:medium`).
+  - `RETRY`: Direct automated retry evaluation. Note: Standard one-time checkout payments require customer 3D-Secure re-authentication. Direct server-to-server retries without customer involvement are designated as a **Simulated Test Action** for algorithmic benchmarking.
+  - `STOP`: Deliberate termination of recovery attempts for fraud or hard declines (internal terminal policy action).
 - **Strict Isolation**: The model receives structured context only; it has zero direct database or payment API access and cannot mutate records.
 
 ### C. Guarded Autopilot (Deterministic Policy Engine)
@@ -99,12 +99,12 @@ Every AI recommendation is validated by 8 deterministic rules before execution:
 > **Cardinal Rule**: AI recommends. Rules authorize. Only `APPROVED` actions execute.
 
 ### D. Outcome Measurement (Incremental Value Lift)
-- Tracks real financial results populated exclusively from verified webhook captures:
+- Tracks financial results populated exclusively from verified webhook captures:
   - **Revenue at Risk**: Total unsettled failed volume.
-  - **Actually Recovered Revenue ($Y$)**: Verified captured recovery volume.
-  - **Baseline Control ($X$)**: Unguided automated retry benchmark (~8% historical baseline).
-  - **Incremental Revenue Lift**: $Y - X$.
-  - **Recovery Rate**: $\frac{Y}{\text{At Risk} + Y}$.
+  - **Observed / Test-Mode Recovery ($Y$)**: Verified captured recovery volume in test mode.
+  - **Baseline Assumption ($X$)**: Theoretical unguided retry benchmark (8% heuristic evaluation model; not empirical historical merchant data).
+  - **Estimated Incremental Lift**: $Y - X$ relative to baseline assumption.
+  - **Production Merchant Recovery**: Explicitly labeled **Not measured** until live merchant production traffic is connected.
 
 ---
 
@@ -163,38 +163,54 @@ npm run dev
 
 ## 7. Testing & Quality Assurance
 
-Run the comprehensive test suite locally:
-
+### A. Backend Unit, Protocol, and Integration Tests
 ```bash
-# Backend linter, static type checker, and tests
 backend/.venv/bin/ruff check backend/
 PYTHONPATH=backend backend/.venv/bin/mypy --config-file backend/pyproject.toml backend/apps backend/revenueos
 PYTHONPATH=backend backend/.venv/bin/pytest backend/tests/
+```
+- **Backend Tests**: 82/82 tests passing in 1.01s (Authentication, WebSocket protocol, PyMongo data layer, Radar scoring, Recovery Brain, Policy engine, Razorpay adapter, Webhooks, Money safety, and Full pipeline).
+- **Static Analysis**: Ruff 100% clean, Mypy 100% clean across 53 source files.
 
-# Frontend type check, lint, and build
+### B. Frontend Type Checking & Production Build
+```bash
 cd frontend
 npx tsc --noEmit
 npm run lint
 npm run build
 ```
+- **TypeScript & Linting**: 0 errors, 0 warnings.
+- **Next.js Webpack Build**: Production bundle compiled in 927ms.
 
-- **Test Suite**: 81/81 backend unit, protocol, policy, adapter, webhook, and integration tests passing in < 1.0s.
-- **Type Safety**: 100% strict typing across Python (53 source files) and TypeScript.
-- **Zero Emojis**: Automated AST verification enforces professional fintech styling across all files.
-
----
-
-## 8. Deployment Topology
-
-- **Frontend**: Deployed on **Vercel** with Next.js App Router and security headers configured in `frontend/vercel.json`.
-- **Backend**: Deployed on **Render** using `render.yaml` blueprint with Uvicorn ASGI server and liveness probes.
-- **Database**: Hosted on **MongoDB Atlas** Free Tier (M0).
-- Detailed deployment guide is documented in [DEPLOYMENT.md](DEPLOYMENT.md).
+### C. Playwright End-to-End Test Suite
+```bash
+cd frontend
+npx playwright test
+```
+- **E2E Tests**: 7/7 passing in 2.0s covering unauthenticated redirect, Turnstile login validation, Command Center KPI cards, tab navigation, truthful empty states, and zero emojis.
 
 ---
 
-## 9. Assumptions & Limitations
+## 8. Deployment Status & Topology
 
-- **Heuristic Baseline**: Where historical merchant data is not yet established, baseline control recovery is modeled at a conservative 8% historical recovery rate for unguided retries.
-- **Test Mode Operation**: Uses Razorpay Test Mode credentials for development and demonstration. Production transition requires Razorpay live keys and HTTPS webhook URLs.
-- **Paise Precision**: All monetary operations assume INR currency in paise. Foreign currency conversion is not in scope for Track 03.
+- **Deployment Status**:
+  - **Deployment Configuration Verified**: Render ASGI blueprint (`render.yaml`), Vercel manifest (`frontend/vercel.json`), database-aware readiness probe (`/ready/`), and production security headers are verified.
+  - **Live Cloud Deployment**: Pending provisioning of live production merchant accounts and custom domain records.
+- **Topology**:
+  - **Frontend**: Designed for **Vercel** with Next.js App Router and strict security headers.
+  - **Backend**: Designed for **Render** Web Service using Uvicorn ASGI server with `/health/` and `/ready/` probes.
+  - **Database**: Hosted on **MongoDB Atlas** Free Tier (M0).
+- Detailed deployment steps are documented in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+---
+
+## 9. Assumptions, Truthful Distinctions & Limitations
+
+1. **Baseline Evaluation Model**: The 8% baseline recovery assumption is a theoretical heuristic model for evaluation comparison, not empirical historical merchant data.
+2. **Action Classification**:
+   - `PAYMENT_LINK`: Real Razorpay Test Mode API call (`POST /v1/payment_links`).
+   - `REMINDER`: Real Razorpay Test Mode API call (`POST /v1/payment_links/:id/notify_by/:medium`).
+   - `RETRY`: Simulated Test Action (standard checkouts require customer interaction; direct re-charging is simulated for algorithmic benchmarking).
+   - `STOP`: Internal terminal policy action.
+3. **Synthetic Test Fixtures**: Transactions in integration tests are synthetic test fixtures strictly isolated in in-memory test databases and never pollute production tables.
+4. **Live Production Volume**: Production merchant recovery volume is explicitly marked **Not measured** until live merchant production traffic is connected.

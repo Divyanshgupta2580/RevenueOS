@@ -37,10 +37,10 @@ class MetricsService:
         }))
         actually_recovered_paise = sum(int(p.get("amount", 0)) for p in recovered_payments)
 
-        # 4. Baseline Control (Unguided Retry ~8% historical benchmark)
+        # 4. Baseline Assumption (8% heuristic evaluation model; not empirical historical merchant data)
         baseline_paise = int(at_risk_paise * 0.08)
 
-        # 5. Incremental Lift (Y - X)
+        # 5. Incremental Lift (Y - X relative to baseline assumption)
         incremental_paise = max(0, actually_recovered_paise - baseline_paise)
 
         # 6. Recovery Rate
@@ -60,4 +60,6 @@ class MetricsService:
             "recoveryRate": round(recovery_rate, 4),
             "activeOpportunities": active_count,
             "blockedActions": blocked_count,
+            "baselineAssumptionNote": "8% heuristic evaluation model (not empirical historical merchant data)",
+            "productionMerchantRecovery": "Not measured",
         }
