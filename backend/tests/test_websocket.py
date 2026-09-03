@@ -229,3 +229,29 @@ async def test_websocket_rate_limiting() -> None:
 
     assert rate_limited is True
     await communicator.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_websocket_origin_validation_production(settings) -> None:
+    """Acceptance Test: Untrusted origin in production is rejected with code 4403."""
+    settings.DEBUG = False
+    settings.WS_ALLOWED_ORIGINS = ["https://revenueos.vercel.app"]
+
+    user = {"id": "usr_test", "username": "operator"}
+    malicious_headers = [(b"origin", b"https://attacker-site.com")]
+    communicator = WebsocketTestCommunicator(
+        RevenueOSConsumer.as_asgi(), user=user, headers=malicious_headers
+    )
+    connected, code = await communicator.connect()
+    assert connected is False
+    assert code == 4403
+
+    # Trusted origin connects successfully
+    trusted_headers = [(b"origin", b"https://revenueos.vercel.app")]
+    trusted_comm = WebsocketTestCommunicator(
+        RevenueOSConsumer.as_asgi(), user=user, headers=trusted_headers
+    )
+    connected_trusted, _ = await trusted_comm.connect()
+    assert connected_trusted is True
+    await trusted_comm.disconnect()
+

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.conf import settings
 
 from apps.websocket.protocol import (
     MAX_FRAME_SIZE,
@@ -35,7 +36,18 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
         self._processed_executions: set[str] = set()
 
     async def connect(self) -> None:
-        """Handshake authentication check and group join."""
+        """Handshake authentication, origin check, and group join."""
+        # 1. Production Origin Validation
+        if not getattr(settings, "DEBUG", True):
+            headers = dict(self.scope.get("headers", []))
+            origin = headers.get(b"origin", b"").decode("utf-8")
+            if origin:
+                allowed = getattr(settings, "WS_ALLOWED_ORIGINS", [])
+                if allowed and not any(origin.startswith(ao) for ao in allowed):
+                    logger.warning(f"Rejected WebSocket connection from untrusted origin: {origin}")
+                    await self.close(code=4403)
+                    return
+
         self.user = self.scope.get("user")
         if not self.user:
             logger.warning("Rejected unauthenticated WebSocket connection attempt.")

@@ -120,6 +120,14 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
+WS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "WS_ALLOWED_ORIGINS",
+        f"{FRONTEND_ORIGIN},http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax" if DEBUG else "None"
