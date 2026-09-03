@@ -1,0 +1,1 @@
+"""RevenueOS modular apps package."""
