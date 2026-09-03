@@ -9,13 +9,17 @@ import logging
 import time
 from typing import ClassVar, Literal, cast
 
-from django.conf import settings
 from google import genai
 from google.genai import types
 from pydantic import ValidationError
 
+from apps.brain.config import (
+    get_configured_gemini_api_key,
+    get_configured_gemini_model,
+)
 from apps.brain.prompts import SYSTEM_INSTRUCTION, build_analysis_prompt
 from apps.brain.schemas import RecoveryBrainInput, RecoveryBrainOutput
+from apps.brain.tracker import usage_tracker
 from apps.radar.scoring import compute_opportunity_erv, get_optimal_heuristic_action
 
 logger = logging.getLogger("revenueos.brain")
@@ -29,8 +33,8 @@ class GeminiProvider:
     _shared_api_key: ClassVar[str | None] = None
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        self.api_key = api_key or getattr(settings, "GEMINI_API_KEY", "")
-        self.model_name = model or getattr(settings, "GEMINI_MODEL", "gemini-3.8-flash")
+        self.api_key = api_key or get_configured_gemini_api_key()
+        self.model_name = model or get_configured_gemini_model()
 
     @classmethod
     def get_client(cls, api_key: str | None) -> genai.Client | None:
@@ -59,7 +63,7 @@ class GeminiProvider:
             response_mime_type="application/json",
             response_schema=RecoveryBrainOutput,
             temperature=0.1,  # Low temperature for deterministic financial decision support
-            max_output_tokens=800,
+            max_output_tokens=400,  # Compact output budget for structured financial decisions
         )
 
     async def generate_recommendation_async(
@@ -89,11 +93,29 @@ class GeminiProvider:
             # Strict Pydantic validation
             output = RecoveryBrainOutput(**raw_data)
             output.latency_ms = elapsed_ms
+
+            # Safe observability tracking
+            in_tokens = 0
+            out_tokens = 0
+            usage_meta = getattr(response, "usage_metadata", None)
+            if usage_meta is not None:
+                p_cnt = getattr(usage_meta, "prompt_token_count", 0)
+                c_cnt = getattr(usage_meta, "candidates_token_count", 0)
+                if isinstance(p_cnt, (int, float)):
+                    in_tokens = int(p_cnt)
+                if isinstance(c_cnt, (int, float)):
+                    out_tokens = int(c_cnt)
+            usage_tracker.record_request(
+                latency_ms=elapsed_ms,
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+            )
             return output
 
         except (json.JSONDecodeError, ValidationError) as exc:
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
             logger.warning("Malformed or invalid structured output from Gemini: %s", exc)
+            usage_tracker.record_schema_failure()
             fallback = self.get_safe_fallback(
                 input_ctx, reason=f"Model response validation error: {exc}"
             )
@@ -102,6 +124,7 @@ class GeminiProvider:
         except Exception as exc:
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
             logger.error("Gemini async invocation error: %s", exc)
+            usage_tracker.record_failure()
             fallback = self.get_safe_fallback(
                 input_ctx, reason=f"Gemini service unavailable: {exc}"
             )
@@ -135,11 +158,29 @@ class GeminiProvider:
             # Strict Pydantic validation
             output = RecoveryBrainOutput(**raw_data)
             output.latency_ms = elapsed_ms
+
+            # Safe observability tracking
+            in_tokens = 0
+            out_tokens = 0
+            usage_meta = getattr(response, "usage_metadata", None)
+            if usage_meta is not None:
+                p_cnt = getattr(usage_meta, "prompt_token_count", 0)
+                c_cnt = getattr(usage_meta, "candidates_token_count", 0)
+                if isinstance(p_cnt, (int, float)):
+                    in_tokens = int(p_cnt)
+                if isinstance(c_cnt, (int, float)):
+                    out_tokens = int(c_cnt)
+            usage_tracker.record_request(
+                latency_ms=elapsed_ms,
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+            )
             return output
 
         except (json.JSONDecodeError, ValidationError) as exc:
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
             logger.warning("Malformed or invalid structured output from Gemini: %s", exc)
+            usage_tracker.record_schema_failure()
             fallback = self.get_safe_fallback(
                 input_ctx, reason=f"Model response validation error: {exc}"
             )
@@ -148,6 +189,7 @@ class GeminiProvider:
         except Exception as exc:
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
             logger.error("Gemini sync invocation error: %s", exc)
+            usage_tracker.record_failure()
             fallback = self.get_safe_fallback(
                 input_ctx, reason=f"Gemini service unavailable: {exc}"
             )

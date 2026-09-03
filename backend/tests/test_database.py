@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from apps.brain.config import get_configured_gemini_model
 from apps.database.client import init_database_indexes, ping_database
 from apps.database.repositories import (
     ActionRepository,
@@ -116,7 +117,7 @@ def test_decision_repository_create_and_get(mock_db) -> None:
     decision_data = {
         "decision_id": "dec_test_001",
         "payment_id": "pay_test_001",
-        "model_version": "gemini-3.8-flash",
+        "model_version": get_configured_gemini_model(),
         "ai_recommendation": {
             "action": "PAYMENT_LINK",
             "confidence": 0.85,

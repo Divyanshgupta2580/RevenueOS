@@ -201,9 +201,9 @@ class DecisionRepository:
         if not decision_id or not payment_id:
             raise DatabaseError("decision_id and payment_id are required.")
 
+        from apps.brain.config import get_configured_gemini_model
+        default_model = get_configured_gemini_model()
         now = datetime.now(UTC)
-        from django.conf import settings
-        default_model = getattr(settings, "GEMINI_MODEL", "gemini-3.8-flash")
         doc = {
             "decision_id": decision_id,
             "payment_id": payment_id,

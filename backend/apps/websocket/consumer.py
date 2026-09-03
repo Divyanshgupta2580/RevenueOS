@@ -246,10 +246,17 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                 else dict(recommendation)
             )
 
+            from apps.brain.config import get_configured_gemini_model
+            configured_model = get_configured_gemini_model()
+
             await self.send(
                 text_data=build_response(
                     "analysis.completed",
-                    {"paymentId": pid, "recommendation": result},
+                    {
+                        "paymentId": pid,
+                        "recommendation": result,
+                        "modelVersion": configured_model,
+                    },
                     request_id=request_id,
                 )
             )
@@ -295,6 +302,9 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
 
             verdict_dict, decision_id = await sync_to_async(evaluate_policy)()
 
+            from apps.brain.config import get_configured_gemini_model
+            configured_model = get_configured_gemini_model()
+
             if verdict_dict.get("status") == "BLOCKED":
                 await self.send(
                     text_data=build_response(
@@ -305,6 +315,7 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                             "decisionId": decision_id,
                             "blockingRule": verdict_dict.get("blockingRule"),
                             "blockingReason": verdict_dict.get("blockingReason"),
+                            "modelVersion": configured_model,
                         },
                         request_id=request_id,
                     )
@@ -321,6 +332,7 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                         "paymentId": pid,
                         "action": act,
                         "decisionId": decision_id,
+                        "modelVersion": configured_model,
                     },
                     request_id=request_id,
                 )
@@ -339,6 +351,8 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                 )
 
             exec_outcome = await sync_to_async(run_execution)()
+            if isinstance(exec_outcome, dict):
+                exec_outcome["modelVersion"] = configured_model
 
             await self.send(
                 text_data=build_response(

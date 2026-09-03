@@ -398,3 +398,151 @@ def test_client_reset_on_shutdown() -> None:
     GeminiProvider.reset_client()
     assert GeminiProvider._shared_client is None
     assert GeminiProvider._shared_api_key is None
+
+
+def test_gemini_model_configuration_single_source_of_truth() -> None:
+    """Requirement 1, 2, 4: Verify GEMINI_MODEL is read from settings and propagates to all calls."""
+    from django.conf import settings
+
+    from apps.brain.config import get_configured_gemini_model
+
+    test_model = "test-model-config"
+    with patch.object(settings, "GEMINI_MODEL", test_model):
+        assert get_configured_gemini_model() == test_model
+
+        provider = GeminiProvider(api_key="mock_key")
+        assert provider.model_name == test_model
+
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            "action": "PAYMENT_LINK",
+            "confidence": 0.85,
+            "expected_recovery_value_paise": 100000,
+            "reason": "Test reasoning",
+            "supporting_factors": ["Factor 1"],
+            "risk_factors": [],
+        })
+        mock_client.models.generate_content.return_value = mock_response
+
+        with patch.object(provider, "_get_client", return_value=mock_client):
+            ctx = RecoveryBrainInput(
+                payment_id="pay_model_test",
+                amount_paise=100000,
+                failure_category="insufficient_funds",
+            )
+            provider.generate_recommendation(ctx)
+
+            # Confirm exact configured model was passed to models.generate_content
+            mock_client.models.generate_content.assert_called_once()
+            call_kwargs = mock_client.models.generate_content.call_args.kwargs
+            assert call_kwargs["model"] == test_model
+
+
+def test_deterministic_short_circuiting_skips_gemini() -> None:
+    """Requirement 10: Deterministic facts must bypass Gemini without making an API call."""
+    from apps.brain.tracker import usage_tracker
+
+    usage_tracker.reset()
+    mock_provider = MagicMock(spec=GeminiProvider)
+    svc = RecoveryBrainService(provider=mock_provider)
+
+    # 1. Already captured payment -> skips Gemini
+    pay_captured = {
+        "payment_id": "pay_short_captured",
+        "amount": 250000,
+        "status": "captured",
+        "captured": True,
+        "failure_category": "none",
+        "retry_count": 0,
+    }
+    rec_captured = svc.analyze_payment(pay_captured)
+    assert rec_captured.action == "STOP"
+    assert rec_captured.confidence == 1.0
+    assert rec_captured.expected_recovery_value_paise == 0
+    assert usage_tracker.gemini_skipped_deterministic >= 1
+    mock_provider.generate_recommendation.assert_not_called()
+
+    # 2. Terminal fraud decline -> skips Gemini
+    pay_fraud = {
+        "payment_id": "pay_short_fraud",
+        "amount": 100000,
+        "status": "failed",
+        "failure_category": "fraud",
+        "retry_count": 0,
+    }
+    rec_fraud = svc.analyze_payment(pay_fraud)
+    assert rec_fraud.action == "STOP"
+    assert rec_fraud.confidence == 0.99
+    assert usage_tracker.gemini_skipped_deterministic >= 2
+    mock_provider.generate_recommendation.assert_not_called()
+
+    # 3. Exhausted retry limits -> skips Gemini
+    pay_exhausted = {
+        "payment_id": "pay_short_exhausted",
+        "amount": 100000,
+        "status": "failed",
+        "failure_category": "soft_decline",
+        "retry_count": 3,
+        "max_retries_allowed": 3,
+    }
+    rec_exhausted = svc.analyze_payment(pay_exhausted)
+    assert rec_exhausted.action == "STOP"
+    assert rec_exhausted.confidence == 0.98
+    assert usage_tracker.gemini_skipped_deterministic >= 3
+    mock_provider.generate_recommendation.assert_not_called()
+
+
+def test_api_key_rotation_does_not_reset_database(mock_db) -> None:
+    """Requirement 21 & 22: Changing GEMINI_API_KEY must not reset or drop persisted MongoDB data."""
+    from django.conf import settings
+
+    # Seed data
+    PaymentRepository.create({
+        "payment_id": "pay_persist_key_test",
+        "amount": 500000,
+        "status": "failed",
+        "customer_id": "cust_persist_01",
+    })
+
+    # Set key A
+    with patch.object(settings, "GEMINI_API_KEY", "dummy_key_A"):
+        provider_a = GeminiProvider()
+        assert provider_a.api_key == "dummy_key_A"
+        # Verify document exists
+        p1 = PaymentRepository.get_by_id("pay_persist_key_test")
+        assert p1 is not None
+        assert p1["payment_id"] == "pay_persist_key_test"
+
+    # Rotate to key B
+    with patch.object(settings, "GEMINI_API_KEY", "dummy_key_B"):
+        provider_b = GeminiProvider()
+        assert provider_b.api_key == "dummy_key_B"
+        # Verify document STILL exists without deletion or reset
+        p2 = PaymentRepository.get_by_id("pay_persist_key_test")
+        assert p2 is not None
+        assert p2["payment_id"] == "pay_persist_key_test"
+        assert p2["amount"] == 500000
+
+
+def test_observability_tracker_metrics() -> None:
+    """Requirement 26: Observability tracker records requests, latencies, and tokens safely."""
+    from apps.brain.tracker import usage_tracker
+
+    usage_tracker.reset()
+    usage_tracker.record_request(latency_ms=145.2, input_tokens=320, output_tokens=75)
+    usage_tracker.record_skip()
+    usage_tracker.record_dedup()
+    usage_tracker.record_failure()
+    usage_tracker.record_schema_failure()
+
+    metrics = usage_tracker.to_dict()
+    assert metrics["gemini_requests"] == 1
+    assert metrics["gemini_skipped_deterministic"] == 1
+    assert metrics["gemini_deduplicated"] == 1
+    assert metrics["gemini_failures"] == 1
+    assert metrics["gemini_schema_failures"] == 1
+    assert metrics["gemini_input_tokens"] == 320
+    assert metrics["gemini_output_tokens"] == 75
+    assert metrics["gemini_total_tokens"] == 395
+    assert metrics["gemini_latency"] == 145.2

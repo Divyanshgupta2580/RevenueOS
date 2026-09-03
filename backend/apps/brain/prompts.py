@@ -104,11 +104,5 @@ Customer Payment History: {cust_successes} successful, {cust_failures} failed (S
 Recovery Attempts for this Payment: {actions_attempted} (Last Action: {last_action or 'None'})
 
 === 5. AI_TASK ===
-Given the verified facts and deterministic constraints above, reason over the evidence and select the single safest and highest-value recovery action:
-- PAYMENT_LINK: Dynamic checkout link via Razorpay Test Mode API. Safest for soft declines, auth errors, and alternative payment methods.
-- REMINDER: Customer notification nudge for pending authorizations.
-- RETRY: Automated gateway retry (Simulated Test Action) for transient network glitches with retries remaining.
-- STOP: Terminate recovery. Mandatory for fraud, stolen cards, hard declines, or exhausted retry limits.
-
-Respond strictly in JSON conforming to the schema with: action, confidence (0.0-1.0), expected_recovery_value_paise (integer), reason, supporting_factors, risk_factors, and stop_rationale (if action is STOP).
+Evaluate the verified facts and policy constraints above. Select the optimal recovery action from eligible actions ({', '.join(k for k, v in eligibility.items() if v)}), assess confidence based on evidence quality, and identify key supporting and risk factors. Output strictly via the configured schema.
 """

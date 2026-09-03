@@ -19,6 +19,7 @@ from apps.brain.schemas import (
     SystemStateData,
     TemporalContextData,
 )
+from apps.brain.tracker import usage_tracker
 from apps.core.money import validate_minor_units
 from apps.database.repositories import ActionRepository, PaymentRepository
 from apps.radar.scoring import compute_opportunity_erv, compute_recoverability_score
@@ -257,13 +258,98 @@ class RecoveryBrainService:
             system_state=system_state,
         )
 
+    @staticmethod
+    def get_deterministic_short_circuit(
+        input_ctx: RecoveryBrainInput,
+    ) -> RecoveryBrainOutput | None:
+        """Evaluate whether a Gemini call can be completely bypassed by hard deterministic facts.
+
+        Returns RecoveryBrainOutput if hard policy constraints mandate STOP without AI reasoning.
+        """
+        # 1. Already recovered / captured payment
+        if input_ctx.system_state and input_ctx.system_state.already_recovered:
+            usage_tracker.record_skip()
+            logger.info("Deterministic short-circuit: payment %s already captured/recovered.", input_ctx.payment_id)
+            return RecoveryBrainOutput(
+                action="STOP",
+                confidence=1.0,
+                expected_recovery_value_paise=0,
+                reason="Payment is already captured and recovered. No further recovery action is required.",
+                supporting_factors=["Payment already captured", "Guards against duplicate charging"],
+                risk_factors=[],
+                stop_rationale="Payment already settled",
+                is_fallback=False,
+                latency_ms=0.05,
+            )
+
+        # 2. Terminal failure (fraud, lost/stolen card, account closed)
+        if input_ctx.failure_context and input_ctx.failure_context.is_terminal:
+            usage_tracker.record_skip()
+            category = input_ctx.failure_category
+            logger.info("Deterministic short-circuit: terminal failure '%s' on payment %s.", category, input_ctx.payment_id)
+            return RecoveryBrainOutput(
+                action="STOP",
+                confidence=0.99,
+                expected_recovery_value_paise=0,
+                reason=f"Terminal failure category '{category}'. Hard stop mandatory under anti-fraud and risk policy.",
+                supporting_factors=["Terminal decline", "Eliminates gateway dispute penalties"],
+                risk_factors=["Unrecoverable risk state"],
+                stop_rationale=f"Terminal failure category '{category}'",
+                is_fallback=False,
+                latency_ms=0.05,
+            )
+
+        # 3. Maximum retry threshold reached
+        if input_ctx.retry_count >= input_ctx.max_retries_allowed:
+            usage_tracker.record_skip()
+            logger.info(
+                "Deterministic short-circuit: retry limit exhausted (%d/%d) on payment %s.",
+                input_ctx.retry_count,
+                input_ctx.max_retries_allowed,
+                input_ctx.payment_id,
+            )
+            return RecoveryBrainOutput(
+                action="STOP",
+                confidence=0.98,
+                expected_recovery_value_paise=0,
+                reason=f"Retry limit exhausted ({input_ctx.retry_count}/{input_ctx.max_retries_allowed}). Further automated attempts prohibited.",
+                supporting_factors=["Retry threshold reached", "Eliminates excessive gateway fees"],
+                risk_factors=["Exhausted recovery allowance"],
+                stop_rationale="Maximum retries reached",
+                is_fallback=False,
+                latency_ms=0.05,
+            )
+
+        # 4. All non-STOP actions ineligible under merchant policy
+        eligibility = input_ctx.system_state.action_eligibility if input_ctx.system_state else {}
+        non_stop_eligible = [act for act, el in eligibility.items() if act != "STOP" and el]
+        if not non_stop_eligible:
+            usage_tracker.record_skip()
+            logger.info("Deterministic short-circuit: all recovery actions ineligible on payment %s.", input_ctx.payment_id)
+            return RecoveryBrainOutput(
+                action="STOP",
+                confidence=0.95,
+                expected_recovery_value_paise=0,
+                reason="All recovery actions are ineligible under current policy constraints.",
+                supporting_factors=["Zero eligible recovery actions"],
+                risk_factors=["Policy constraints prohibit recovery"],
+                stop_rationale="All recovery actions ineligible",
+                is_fallback=False,
+                latency_ms=0.05,
+            )
+
+        return None
+
     def analyze_payment(
         self,
         payment: dict[str, Any],
         now: datetime | None = None,
     ) -> RecoveryBrainOutput:
-        """Run synchronous AI analysis with structured Decision Context."""
+        """Run synchronous AI analysis with structured Decision Context and short-circuiting."""
         input_ctx = self.build_decision_context(payment, now=now)
+        short_circuit = self.get_deterministic_short_circuit(input_ctx)
+        if short_circuit is not None:
+            return short_circuit
         return self.provider.generate_recommendation(input_ctx)
 
     async def analyze_payment_async(
@@ -284,6 +370,7 @@ class RecoveryBrainService:
 
         # Deduplicate simultaneous calls for the exact same state
         if dedup_key in self._in_flight_tasks:
+            usage_tracker.record_dedup()
             logger.debug("Awaiting existing in-flight Gemini analysis for key %s", dedup_key)
             return await self._in_flight_tasks[dedup_key]
 
@@ -301,7 +388,7 @@ class RecoveryBrainService:
         payment: dict[str, Any],
         now: datetime | None = None,
     ) -> RecoveryBrainOutput:
-        """Execute Decision Context building and async Gemini generation."""
+        """Execute Decision Context building, short-circuit check, and async Gemini generation."""
         # If analyze_payment has been mocked in tests, respect the mock
         if hasattr(self.analyze_payment, "assert_called"):
             mock_res = self.analyze_payment(payment, now)
@@ -311,6 +398,11 @@ class RecoveryBrainService:
         t0 = time.perf_counter()
         input_ctx = self.build_decision_context(payment, now=now)
         prep_time_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+        # Deterministic short-circuit check: skips Gemini entirely if facts dictate STOP
+        short_circuit = self.get_deterministic_short_circuit(input_ctx)
+        if short_circuit is not None:
+            return short_circuit
 
         output = await self.provider.generate_recommendation_async(input_ctx)
 
