@@ -37,7 +37,7 @@ class GuardedAutopilotService:
         now = datetime.now(UTC)
 
         from django.conf import settings
-        model_version = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+        model_version = getattr(settings, "GEMINI_MODEL", "gemini-3.8-flash")
 
         decision_record = {
             "decision_id": decision_id,

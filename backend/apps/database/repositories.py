@@ -137,6 +137,54 @@ class PaymentRepository:
         total = col.count_documents(query) if hasattr(col, "count_documents") else len(list(col.find(query)))
         return [dict(d) for d in cursor], total
 
+    @classmethod
+    def get_customer_history(cls, customer_id: str, limit: int = 10) -> dict[str, Any]:
+        """Retrieve sanitized customer transaction aggregates.
+
+        Excludes all PII, tokens, card credentials, and sensitive data.
+        """
+        if not customer_id or customer_id in ["unknown", ""]:
+            return {
+                "customer_id": "unknown",
+                "total_successful_payments": 0,
+                "total_failed_payments": 0,
+                "recent_successful_payments_count": 0,
+                "recent_failed_payments_count": 0,
+                "historical_recovery_success_rate": 0.0,
+                "time_since_last_success_hours": None,
+            }
+        col = cls.get_collection()
+        cursor = (
+            col.find(
+                {"customer_id": customer_id},
+                {"_id": 0, "status": 1, "created_at": 1, "amount": 1},
+            )
+            .sort("created_at", -1)
+            .limit(limit)
+        )
+        records = list(cursor)
+        successes = [r for r in records if r.get("status") in ["captured", "success"]]
+        failures = [r for r in records if r.get("status") == "failed"]
+        last_success = successes[0]["created_at"] if successes and "created_at" in successes[0] else None
+
+        hours_since_success = None
+        if isinstance(last_success, datetime):
+            if last_success.tzinfo is None:
+                last_success = last_success.replace(tzinfo=UTC)
+            hours_since_success = round(max(0.0, (datetime.now(UTC) - last_success).total_seconds() / 3600.0), 1)
+
+        total_tx = len(records)
+        success_rate = round(len(successes) / total_tx, 4) if total_tx > 0 else 0.0
+        return {
+            "customer_id": customer_id,
+            "total_successful_payments": len(successes),
+            "total_failed_payments": len(failures),
+            "recent_successful_payments_count": len(successes),
+            "recent_failed_payments_count": len(failures),
+            "historical_recovery_success_rate": success_rate,
+            "time_since_last_success_hours": hours_since_success,
+        }
+
 
 class DecisionRepository:
     """Repository for recovery_decisions collection."""
@@ -155,7 +203,7 @@ class DecisionRepository:
 
         now = datetime.now(UTC)
         from django.conf import settings
-        default_model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+        default_model = getattr(settings, "GEMINI_MODEL", "gemini-3.8-flash")
         doc = {
             "decision_id": decision_id,
             "payment_id": payment_id,
@@ -263,6 +311,29 @@ class ActionRepository:
 
         res = col.update_one({"action_id": action_id}, {"$set": updates})
         return bool(res.modified_count > 0)
+
+    @classmethod
+    def get_payment_action_history(cls, payment_id: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Retrieve recent recovery actions executed for a specific payment."""
+        if not payment_id:
+            return []
+        col = cls.get_collection()
+        cursor = (
+            col.find(
+                {"payment_id": payment_id},
+                {
+                    "_id": 0,
+                    "action_type": 1,
+                    "status": 1,
+                    "outcome": 1,
+                    "executed_at": 1,
+                    "external_reference": 1,
+                },
+            )
+            .sort("executed_at", -1)
+            .limit(limit)
+        )
+        return [dict(d) for d in cursor]
 
 
 class WebhookEventRepository:

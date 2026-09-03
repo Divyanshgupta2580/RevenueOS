@@ -77,7 +77,7 @@ This guide details the production deployment topology, environment configuration
 | `RAZORPAY_KEY_SECRET` | Render | Secret | Razorpay Test API Secret. |
 | `RAZORPAY_WEBHOOK_SECRET` | Render | Secret | HMAC secret for verifying incoming webhooks. |
 | `GEMINI_API_KEY` | Render | Secret | Google Gemini GenAI API Key. |
-| `GEMINI_MODEL` | Render | Public | Selected model (default: `gemini-2.5-flash`). |
+| `GEMINI_MODEL` | Render | Public | Selected model (default: `gemini-3.8-flash`). |
 | `TURNSTILE_SECRET_KEY` | Render | Secret | Cloudflare Turnstile Server Secret for `/siteverify`. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Vercel | Public | Cloudflare Turnstile Client Site Key. |
 | `NEXT_PUBLIC_API_ORIGIN` | Vercel | Public | Backend base URL (e.g., `https://revenueos-backend.onrender.com`). |

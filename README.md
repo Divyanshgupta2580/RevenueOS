@@ -11,7 +11,7 @@
 RevenueOS is an AI Revenue Recovery Decision Engine designed to solve a critical fintech problem:
 When online payments fail, which transactions should merchants recover first, what is the safest and highest-value intervention, and how much incremental revenue did the system actually recover?
 
-RevenueOS bridges the gap between probabilistic AI reasoning and deterministic financial safety. It uses **Google Gemini 2.0 Flash** (configurable via `GEMINI_MODEL`) as an isolated advisory engine, gated behind an auditable, deterministic **Guarded Autopilot Policy Engine** that executes bounded recovery workflows via **Razorpay Test Mode APIs, Simulated Test Actions, and Signed Webhooks**.
+RevenueOS bridges the gap between probabilistic AI reasoning and deterministic financial safety. It uses **Google Gemini 3.8 Flash** (configurable via `GEMINI_MODEL`) as an isolated advisory engine, gated behind an auditable, deterministic **Guarded Autopilot Policy Engine** that executes bounded recovery workflows via **Razorpay Test Mode APIs, Simulated Test Actions, and Signed Webhooks**.
 
 ---
 
@@ -77,7 +77,7 @@ RevenueOS Backend (Django Channels + Uvicorn)
   - Strictly operates on **integer minor currency units (paise)**. Floating-point arithmetic on currency is strictly forbidden.
 
 ### B. Recovery Brain (Gemini AI Advisory)
-- Single logical decision engine powered by the official `google-genai` SDK using `GEMINI_MODEL` (default: `gemini-2.0-flash`).
+- Single logical decision engine powered by the official `google-genai` SDK using `GEMINI_MODEL` (default: `gemini-3.8-flash`).
 - Constrained to a bounded decision space:
   - `PAYMENT_LINK`: Issue dynamic Razorpay payment link for customer checkout completion (backed by Razorpay Test Mode API `POST /v1/payment_links`).
   - `REMINDER`: Dispatch non-intrusive reminder for pending authorization (backed by Razorpay API `POST /v1/payment_links/:id/notify_by/:medium`).

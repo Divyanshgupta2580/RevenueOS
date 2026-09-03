@@ -232,7 +232,7 @@ Audit log of every AI recommendation and subsequent policy authorization.
   "_id": "ObjectId",
   "decision_id": "dec_01J6XYZ",
   "payment_id": "pay_test_99214A",
-  "model_version": "gemini-2.5-flash",
+  "model_version": "gemini-3.8-flash",
   "ai_recommendation": {
     "action": "PAYMENT_LINK",
     "confidence": 0.88,
@@ -343,7 +343,7 @@ This ensures the highest absolute recoverable monetary value with the greatest l
 
 ## 7. Recovery Brain (AI Engine)
 
-The Recovery Brain is a **single logical advisory engine** powered by the official Google GenAI Python SDK (`google-genai`), using the model specified by `GEMINI_MODEL` (default: `gemini-2.5-flash`).
+The Recovery Brain is a **single logical advisory engine** powered by the official Google GenAI Python SDK (`google-genai`), using the model specified by `GEMINI_MODEL` (default: `gemini-3.8-flash`).
 
 ### 7.1 Input Context
 The model is fed only sanitized, bounded domain data:

@@ -227,19 +227,8 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             from apps.brain.service import RecoveryBrainService
             from apps.database.repositories import PaymentRepository
 
-            def run_brain_analysis() -> dict[str, Any] | None:
-                payment = PaymentRepository.get_by_id(pid)
-                if not payment:
-                    return None
-                brain_svc = RecoveryBrainService()
-                recommendation = brain_svc.analyze_payment(payment)
-                if hasattr(recommendation, "model_dump"):
-                    return recommendation.model_dump()
-                return dict(recommendation)
-
-            result = await sync_to_async(run_brain_analysis)()
-
-            if result is None:
+            payment = await sync_to_async(PaymentRepository.get_by_id)(pid)
+            if not payment:
                 await self.send(
                     text_data=build_error(
                         "NOT_FOUND",
@@ -248,6 +237,14 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                     )
                 )
                 return
+
+            brain_svc = RecoveryBrainService()
+            recommendation = await brain_svc.analyze_payment_async(payment)
+            result = (
+                recommendation.model_dump()
+                if hasattr(recommendation, "model_dump")
+                else dict(recommendation)
+            )
 
             await self.send(
                 text_data=build_response(
