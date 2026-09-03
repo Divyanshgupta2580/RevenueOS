@@ -58,6 +58,12 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(OPERATORS_GROUP, self.channel_name)
         logger.info(f"WebSocket disconnected with code {close_code} [{self.channel_name}]")
 
+    async def broadcast_event(self, event: dict[str, Any]) -> None:
+        """Receive group broadcast from webhook or background service and forward to client."""
+        event_type = str(event.get("event_type", "payment.updated"))
+        data = event.get("data", {})
+        await self.send(text_data=build_response(event_type, data))
+
     async def receive(self, text_data: str | None = None, bytes_data: bytes | None = None) -> None:
         """Validate, rate-limit, and dispatch incoming client frames."""
         self.last_activity = datetime.now(UTC)

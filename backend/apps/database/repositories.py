@@ -295,3 +295,5 @@ class WebhookEventRepository:
 
         col.insert_one(doc)
         return doc
+
+    create = record_event

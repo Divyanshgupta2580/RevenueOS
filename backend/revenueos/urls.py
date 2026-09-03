@@ -4,6 +4,7 @@ from django.http import JsonResponse
 from django.urls import path
 
 from apps.authentication.views import login_view, logout_view, me_view
+from apps.webhooks.views import razorpay_webhook_view
 
 
 def health_check(request) -> JsonResponse:
@@ -35,4 +36,6 @@ urlpatterns = [
     path("api/auth/login/", login_view, name="auth_login"),
     path("api/auth/logout/", logout_view, name="auth_logout"),
     path("api/auth/me/", me_view, name="auth_me"),
+    # Webhooks
+    path("api/webhooks/razorpay/", razorpay_webhook_view, name="razorpay_webhook"),
 ]

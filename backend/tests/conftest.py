@@ -126,6 +126,22 @@ class InMemoryCollection:
         mock_res.modified_count = 1 if doc else 0
         return mock_res
 
+    def update_many(self, query: dict[str, Any], update: dict[str, Any]) -> Any:
+        count = 0
+        if "$set" in update:
+            for d in self.documents:
+                match = True
+                for k, v in query.items():
+                    if d.get(k) != v:
+                        match = False
+                        break
+                if match:
+                    d.update(update["$set"])
+                    count += 1
+        mock_res = MagicMock()
+        mock_res.modified_count = count
+        return mock_res
+
     def delete_one(self, query: dict[str, Any]) -> Any:
         doc = self.find_one(query)
         deleted = 0
@@ -151,6 +167,9 @@ class InMemoryDatabase:
             self.collections[name] = InMemoryCollection()
         return self.collections[name]
 
+    def __getattr__(self, name: str) -> InMemoryCollection:
+        return self[name]
+
 
 @pytest.fixture(autouse=True)
 def mock_db():
@@ -158,6 +177,7 @@ def mock_db():
     in_memory_db = InMemoryDatabase()
     with patch("apps.database.client.get_database", return_value=in_memory_db), \
          patch("apps.database.repositories.get_database", return_value=in_memory_db), \
+         patch("apps.webhooks.processor.get_database", return_value=in_memory_db), \
          patch("apps.authentication.services.get_database", return_value=in_memory_db), \
          patch("apps.authentication.views.get_database", return_value=in_memory_db):
         yield in_memory_db
