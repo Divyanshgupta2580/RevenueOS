@@ -309,16 +309,24 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                 )
             )
 
+            from apps.razorpay_adapter.service import RazorpayRecoveryExecutor
+
+            def run_execution() -> dict[str, Any]:
+                executor = RazorpayRecoveryExecutor()
+                return executor.execute_authorized_action(
+                    payment_id=pid,
+                    action=act,
+                    decision_id=decision_id,
+                    idempotency_key=idempotency_key,
+                    payload=payload,
+                )
+
+            exec_outcome = await sync_to_async(run_execution)()
+
             await self.send(
                 text_data=build_response(
                     "recovery.executed",
-                    {
-                        "paymentId": pid,
-                        "action": act,
-                        "decisionId": decision_id,
-                        "status": "QUEUED",
-                        "idempotencyKey": idempotency_key,
-                    },
+                    exec_outcome,
                     request_id=request_id,
                 )
             )

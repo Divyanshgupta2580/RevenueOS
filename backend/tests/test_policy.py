@@ -229,6 +229,6 @@ async def test_websocket_recovery_execute_approved_flow(mock_db, valid_payment) 
     # Event 2: recovery.executed
     msg2 = json.loads(await communicator.receive_from())
     assert msg2["type"] == "recovery.executed"
-    assert msg2["payload"]["status"] == "QUEUED"
+    assert msg2["payload"]["status"] in ["EXECUTED", "QUEUED"]
 
     await communicator.disconnect()
