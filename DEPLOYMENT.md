@@ -45,7 +45,7 @@ Render Web Service (Django Channels + Uvicorn)
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames | `revenueos-backend.onrender.com,localhost,127.0.0.1` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Trusted origins for CSRF protection | `https://revenueos-backend.onrender.com,https://revenueos.vercel.app` |
 | `FRONTEND_ORIGIN` | Allowed CORS origin for session credentials | `https://revenueos.vercel.app` |
-| `MONGODB_URI` | MongoDB Atlas connection string | `mongodb+srv://user:pass@cluster0.mongodb.net/?retryWrites=true&w=majority` |
+| `MONGODB_URI` | MongoDB Atlas connection string | `mongodb+srv://<username>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority` |
 | `MONGODB_DB` | Production database name | `revenueos_production` |
 | `RAZORPAY_KEY_ID` | Razorpay Test Mode Key ID | `rzp_test_...` |
 | `RAZORPAY_KEY_SECRET` | Razorpay Test Mode Key Secret | Secret string |

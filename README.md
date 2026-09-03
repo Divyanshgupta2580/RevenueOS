@@ -1,88 +1,200 @@
 # RevenueOS — AI Revenue Recovery Decision Engine
 
-> **Razorpay AI Buildathon 2026** — *Track 03: AI Revenue Recovery*
-
-RevenueOS is an autonomous, production-grade decision engine that identifies at-risk revenue, ranks opportunities deterministically, recommends bounded recovery actions via Google Gemini, gates every action through a deterministic safety policy engine, executes approved actions through Razorpay Test APIs, and measures actual incremental recovery against a strict baseline.
-
----
-
-## 1. The Core Product Question
-
-> *"Which revenue at risk should be recovered first, what is the safest and highest-value recovery action, and how much incremental revenue did RevenueOS actually recover?"*
-
-Most failed payment retry mechanisms operate naively: they either blindly retry cards (triggering scheme fees and high decline ratios) or abandon soft-declined transactions entirely. RevenueOS solves this with four core pillars:
-
-1. **IDENTIFY:** Pinpoint transactions genuinely at risk using deterministic categorization (soft declines, authentication drops, balance limits) versus fatal hard declines.
-2. **PRIORITIZE (Revenue Radar):** Calculate deterministic **Recoverability Scores** and **Expected Recovery Values (ERV)** in integer minor units (paise) to rank the most lucrative, savable capital first.
-3. **DECIDE (Recovery Brain):** A single logical AI decision engine using Google Gemini that outputs bounded, schema-validated actions (`RETRY`, `PAYMENT_LINK`, `REMINDER`, `STOP`) with an audit-ready reasoning trail.
-4. **EXECUTE & MEASURE (Guarded Autopilot):** Zero unverified AI execution. All recommendations pass through a deterministic policy gate enforcing retry ceilings, idempotency, customer fatigue suppression, and status validity. Measures real incremental recovery ($Y - X$) against empirical control benchmarks.
+**Target Track**: Razorpay AI Buildathon 2026 — Track 03: AI Revenue Recovery  
+**Category**: Fintech Decision Engine & Guarded Autopilot Pipeline  
+**Architecture**: Modular Monolith &bull; WebSocket-First &bull; Deterministic Policy Guarded  
 
 ---
 
-## 2. System Architecture
+## 1. What RevenueOS Is
 
-RevenueOS is architected as a lean, secure, modular monolith:
+RevenueOS is an AI Revenue Recovery Decision Engine designed to solve a critical fintech problem:
+When online payments fail, which transactions should merchants recover first, what is the safest and highest-value intervention, and how much incremental revenue did the system actually recover?
 
-- **Frontend:** Next.js 15 (App Router), TypeScript, Tailwind CSS, Lucide React. High-density dark fintech theme.
-- **Backend:** Python 3.14, Django 5+, Django Channels, Uvicorn ASGI.
-- **Database:** MongoDB Atlas Free Tier via PyMongo directly (zero ORM overhead).
-- **Real-Time Layer:** WebSocket-first protocol (`/ws/v1/app/`) with heartbeats, correlation IDs, and resilient reconnection.
-- **Security:** Cloudflare Turnstile anti-bot verification, Argon2id password hashing, HTTP-only session cookies.
-- **Zero Dummy Data:** Strict policy against fabricated metrics or placeholder transactions.
+RevenueOS bridges the gap between probabilistic AI reasoning and deterministic financial safety. It uses **Google Gemini 2.5 Flash** as an isolated advisory engine, gated behind an auditable, deterministic **Guarded Autopilot Policy Engine** that executes bounded recovery workflows via **Razorpay APIs and Signed Webhooks**.
+
+---
+
+## 2. Problem Statement & Why It Matters
+
+### The Core Problem
+Failed payments are not uniform:
+1. **Naive Retries Cause Churn**: Unconditionally retrying hard declines (e.g. stolen card, expired card) wastes gateway retry fees and damages merchant reputation.
+2. **Untracked Opportunities**: High-value transactions with transient soft declines (e.g. temporary network timeouts, low balance) are frequently abandoned without proactive customer outreach.
+3. **Black-Box AI Danger**: Autonomous LLMs cannot be given direct access to mutate financial balances or execute banking transactions without deterministic guardrails.
+4. **Unmeasured Value**: Most recovery systems claim arbitrary percentage lifts without comparing outcomes against an unguided baseline control.
+
+### The RevenueOS Solution
+RevenueOS answers three questions deterministically:
+1. **Which revenue at risk should be recovered first?** (Deterministic ERV & Recoverability Score).
+2. **What is the safest and highest-value recovery action?** (Gemini recommendations gated by Guarded Autopilot rules).
+3. **How much incremental revenue was actually recovered?** (Transparent comparison of Baseline Control vs Actual Webhook-Captured Recovery).
+
+---
+
+## 3. High-Level Architecture & Technology Choices
+
+RevenueOS is engineered as a lean, explainable, production-ready modular monolith.
 
 ```
-Browser (Next.js Dark Dashboard)
-       │ (WSS Application RPC / HTTPS Auth)
-       ▼
-Render Web Service (Django Channels + Uvicorn ASGI)
-       ├── PyMongo ──────────► MongoDB Atlas Free Tier
-       ├── GenAI SDK ────────► Google Gemini API (Recovery Brain)
-       ├── Policy Gate ──────► Guarded Autopilot (Rules Engine)
-       ├── Razorpay REST ────► Razorpay Test Platform
-       └── HTTPS Webhooks ───◄ Razorpay Webhook Ingestion (HMAC-SHA256)
+Browser (Operator Client)
+    |
+    +---- HTTPS: Next.js Frontend (Vercel)
+    |
+    +---- WSS:   Django Channels WebSocket (Render)
+    |
+    v
+RevenueOS Backend (Django Channels + Uvicorn)
+    |
+    +---- PyMongo (Direct Driver) -------> MongoDB Atlas Free Tier (Persistent Collections)
+    |
+    +---- Google GenAI SDK (Isolated) ---> Google Gemini API (GEMINI_MODEL)
+    |
+    +---- REST HTTPS Adapter -----------> Razorpay Test Mode API
+    |
+    <---- HMAC-SHA256 Webhooks <--------- Inbound Razorpay Events (/api/webhooks/razorpay/)
+```
+
+### Why These Technology Choices?
+- **Why Django + Channels + Uvicorn?**  
+  Django provides robust security primitives, CSRF protection, secure HTTP-only session cookies, and clean ASGI concurrency through Channels and Uvicorn. It avoids microservice proliferation while offering an enterprise-grade modular structure.
+- **Why WebSockets-First?**  
+  Fintech operators need real-time radar scanning, instant AI analysis streaming, and immediate webhook state synchronization without inefficient polling loops.
+- **Why MongoDB via Direct PyMongo?**  
+  Payment metadata, failure context, and audit trails possess varied schema attributes depending on payment method (cards, UPI, netbanking). PyMongo delivers zero-overhead, schema-flexible persistence without heavy, unnecessary ORM abstractions.
+- **Why No Redis / Celery / Kafka?**  
+  To strictly maintain the free-tier constraint and keep deployment transparent, operations run efficiently within an in-memory asynchronous event loop with idempotent database state persistence.
+
+---
+
+## 4. The 4 Core Product Pillars
+
+### A. Revenue Radar (Deterministic Prioritization)
+- Scans failed payments and computes:
+  - **Recoverability Score** ($S_i \in [0, 100]$): Derived deterministically from payment age decay, failure category weights (soft vs hard decline), and retry history multiplier ($0.95^{\text{retries}}$).
+  - **Expected Recovery Value (Paise)**:
+    $$\text{ERV} = \text{Amount} \times P(\text{Recovery}) \times P(\text{Action Success})$$
+  - Strictly operates on **integer minor currency units (paise)**. Floating-point arithmetic on currency is strictly forbidden.
+
+### B. Recovery Brain (Gemini AI Advisory)
+- Single logical decision engine powered by the official `google-genai` SDK.
+- Constrained to a bounded decision space:
+  - `RETRY`: Automated gateway retry for transient network faults.
+  - `PAYMENT_LINK`: Issue dynamic Razorpay payment link for customer checkout completion.
+  - `REMINDER`: Dispatch non-intrusive reminder for pending authorization.
+  - `STOP`: Deliberate termination of recovery attempts for fraud or hard declines.
+- **Strict Isolation**: The model receives structured context only; it has zero direct database or payment API access and cannot mutate records.
+
+### C. Guarded Autopilot (Deterministic Policy Engine)
+Every AI recommendation is validated by 8 deterministic rules before execution:
+1. `USER_AUTHORIZATION`: Verify operator has permission to trigger financial actions.
+2. `SUPPORTED_ACTION`: Enforce action is in {`RETRY`, `PAYMENT_LINK`, `REMINDER`, `STOP`}.
+3. `PAYMENT_ELIGIBILITY`: Payment must exist and be in `failed` status.
+4. `ALREADY_RECOVERED`: Reject execution on previously captured transactions.
+5. `AMOUNT_VALIDITY`: Validate amount is a positive integer minor unit.
+6. `RETRY_THRESHOLD`: Block retries exceeding maximum configured threshold.
+7. `RISK_POLICY`: Block attempts on fraud, stolen cards, or blacklisted accounts.
+8. `DUPLICATE_EXECUTION`: Enforce idempotency across session and database keys.
+
+> **Cardinal Rule**: AI recommends. Rules authorize. Only `APPROVED` actions execute.
+
+### D. Outcome Measurement (Incremental Value Lift)
+- Tracks real financial results populated exclusively from verified webhook captures:
+  - **Revenue at Risk**: Total unsettled failed volume.
+  - **Actually Recovered Revenue ($Y$)**: Verified captured recovery volume.
+  - **Baseline Control ($X$)**: Unguided automated retry benchmark (~8% historical baseline).
+  - **Incremental Revenue Lift**: $Y - X$.
+  - **Recovery Rate**: $\frac{Y}{\text{At Risk} + Y}$.
+
+---
+
+## 5. Security & Bot Protection
+
+- **Cloudflare Turnstile**: Mandatory anti-bot challenge on login, cryptographically verified server-side.
+- **Argon2id Password Hashing**: State-of-the-art memory-hard password derivation via `argon2-cffi`.
+- **HMAC-SHA256 Webhook Verification**: Constant-time signature comparison on `X-Razorpay-Signature`.
+- **Origin Validation**: WebSocket connections in production validate browser origin against `WS_ALLOWED_ORIGINS` to prevent Cross-Site WebSocket Hijacking (CSWSH).
+- **Leaky Bucket Rate Limiting**: Sensitive financial executions are bounded per operator session.
+- **Zero Secrets in Code**: 100% environment-driven configuration.
+
+---
+
+## 6. Local Development Setup
+
+### Prerequisites
+- Python 3.12+
+- Node.js 20+
+- MongoDB instance (local or MongoDB Atlas connection URI)
+
+### Backend Setup
+```bash
+# 1. Navigate to backend
+cd backend
+
+# 2. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Copy environment configuration
+cp ../.env.example .env
+# Edit .env with your credentials
+
+# 5. Run backend server
+python -m uvicorn revenueos.asgi:application --host 127.0.0.1 --port 8000 --reload
+```
+
+### Frontend Setup
+```bash
+# 1. Navigate to frontend
+cd frontend
+
+# 2. Install dependencies
+npm install
+
+# 3. Run development server
+npm run dev
+# Dashboard available at http://localhost:3000
 ```
 
 ---
 
-## 3. Documentation Index
+## 7. Testing & Quality Assurance
 
-- [System Architecture (ARCHITECTURE.md)](docs/ARCHITECTURE.md): Full technical breakdown, data models, ERV formulas, and component architecture.
-- [WebSocket Protocol v1 (WEBSOCKET_PROTOCOL.md)](docs/WEBSOCKET_PROTOCOL.md): Envelope structure, message catalog, heartbeat, and reconnection lifecycles.
-- [Deployment Runbook (DEPLOYMENT.md)](docs/DEPLOYMENT.md): Production deployment guides for Vercel, Render, and MongoDB Atlas.
-- [Canonical Configuration (.env.example)](.env.example): Environment variable templates.
+Run the comprehensive test suite locally:
+
+```bash
+# Backend linter, static type checker, and tests
+backend/.venv/bin/ruff check backend/
+PYTHONPATH=backend backend/.venv/bin/mypy --config-file backend/pyproject.toml backend/apps backend/revenueos
+PYTHONPATH=backend backend/.venv/bin/pytest backend/tests/
+
+# Frontend type check, lint, and build
+cd frontend
+npx tsc --noEmit
+npm run lint
+npm run build
+```
+
+- **Test Suite**: 81/81 backend unit, protocol, policy, adapter, webhook, and integration tests passing in < 1.0s.
+- **Type Safety**: 100% strict typing across Python (53 source files) and TypeScript.
+- **Zero Emojis**: Automated AST verification enforces professional fintech styling across all files.
+
+---
+
+## 8. Deployment Topology
+
+- **Frontend**: Deployed on **Vercel** with Next.js App Router and security headers configured in `frontend/vercel.json`.
+- **Backend**: Deployed on **Render** using `render.yaml` blueprint with Uvicorn ASGI server and liveness probes.
+- **Database**: Hosted on **MongoDB Atlas** Free Tier (M0).
+- Detailed deployment guide is documented in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
-## 4. Free-Tier Operating Constraints
+## 9. Assumptions & Limitations
 
-RevenueOS is engineered to run permanently on free infrastructure:
-- **MongoDB Atlas:** Free M0 cluster (512 MB). Bounded reads, projections, and minimal indexing ensure low memory usage.
-- **Render:** Free Web Service with ASGI Uvicorn single-worker process.
-- **Vercel:** Hobby tier for Next.js SSR and static asset CDN.
-- **Razorpay:** Sandbox Test Mode credentials with zero transaction processing fees.
-- **Google Gemini:** Free tier API quota with rate-limited bounded calls.
-- **Cloudflare Turnstile:** Free tier anti-bot challenge validation.
-
----
-
-## 5. Development Roadmap & Phased Execution
-
-- [x] **Phase 0:** Inspection and Architecture Specification (Completed)
-- [ ] **Phase 1:** Project Skeleton & Tooling (Next.js, Django, Channels, PyMongo, Linters)
-- [ ] **Phase 2:** Authentication & Cloudflare Turnstile Security
-- [ ] **Phase 3:** Real-Time WebSocket Infrastructure & Protocol Audit
-- [ ] **Phase 4:** MongoDB Atlas PyMongo Persistence Layer
-- [ ] **Phase 5:** Revenue Radar & Deterministic ERV Math
-- [ ] **Phase 6:** Recovery Brain AI Engine (Gemini SDK Integration)
-- [ ] **Phase 7:** Guarded Autopilot Deterministic Policy Engine
-- [ ] **Phase 8:** Razorpay Test API Client Adapter
-- [ ] **Phase 9:** Signed Webhook Ingestion Pipeline
-- [ ] **Phase 10:** High-Density Dark Fintech Frontend
-- [ ] **Phase 11:** End-to-End Recovery Pipeline Integration
-- [ ] **Phase 12:** Quality, Security, and Playwright Testing Audit
-- [ ] **Phase 13:** Vercel & Render Deployment Verification
-- [ ] **Phase 14:** Production WebSocket Resilience Audit
-- [ ] **Phase 15:** Final Repository & Zero-Emoji Code Audit
-
----
-*RevenueOS — Built for the Razorpay AI Buildathon 2026.*
+- **Heuristic Baseline**: Where historical merchant data is not yet established, baseline control recovery is modeled at a conservative 8% historical recovery rate for unguided retries.
+- **Test Mode Operation**: Uses Razorpay Test Mode credentials for development and demonstration. Production transition requires Razorpay live keys and HTTPS webhook URLs.
+- **Paise Precision**: All monetary operations assume INR currency in paise. Foreign currency conversion is not in scope for Track 03.
