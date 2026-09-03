@@ -241,26 +241,81 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
         if msg_type == "recovery.execute":
             payment_id = payload.get("paymentId")
             action = payload.get("action")
-            idempotency_key = payload.get("idempotencyKey", f"{payment_id}:{action}")
+            if not payment_id or not action:
+                await self.send(
+                    text_data=build_error("INVALID_ARGUMENT", "paymentId and action are required.", request_id)
+                )
+                return
 
-            # Guard against duplicate execution in active session
+            pid = str(payment_id)
+            act = str(action)
+            idempotency_key = str(payload.get("idempotencyKey") or f"{pid}:{act}")
+
+            # Session-level duplicate guard
             if idempotency_key in self._processed_executions:
                 await self.send(
                     text_data=build_error(
                         "DUPLICATE_EXECUTION",
-                        "This recovery action has already been dispatched for this opportunity.",
+                        "This recovery action has already been dispatched in this session.",
                         request_id=request_id,
                     )
                 )
                 return
 
+            from asgiref.sync import sync_to_async
+
+            from apps.policy.service import GuardedAutopilotService
+
+            def evaluate_policy() -> tuple[dict[str, Any], str]:
+                verdict, dec_id = GuardedAutopilotService.evaluate_and_record(
+                    payment_id=pid,
+                    action=act,
+                    user=self.user,
+                    idempotency_key=idempotency_key,
+                    ai_recommendation=payload.get("aiRecommendation"),
+                )
+                return verdict.to_dict(), dec_id
+
+            verdict_dict, decision_id = await sync_to_async(evaluate_policy)()
+
+            if verdict_dict.get("status") == "BLOCKED":
+                await self.send(
+                    text_data=build_response(
+                        "recovery.blocked",
+                        {
+                            "paymentId": pid,
+                            "action": act,
+                            "decisionId": decision_id,
+                            "blockingRule": verdict_dict.get("blockingRule"),
+                            "blockingReason": verdict_dict.get("blockingReason"),
+                        },
+                        request_id=request_id,
+                    )
+                )
+                return
+
+            # Action is APPROVED by deterministic policy engine
             self._processed_executions.add(idempotency_key)
+
+            await self.send(
+                text_data=build_response(
+                    "recovery.approved",
+                    {
+                        "paymentId": pid,
+                        "action": act,
+                        "decisionId": decision_id,
+                    },
+                    request_id=request_id,
+                )
+            )
+
             await self.send(
                 text_data=build_response(
                     "recovery.executed",
                     {
-                        "paymentId": payment_id,
-                        "action": action,
+                        "paymentId": pid,
+                        "action": act,
+                        "decisionId": decision_id,
                         "status": "QUEUED",
                         "idempotencyKey": idempotency_key,
                     },
@@ -270,11 +325,28 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             return
 
         if msg_type == "decision.explain":
-            decision_id = payload.get("decisionId")
+            dec_arg = payload.get("decisionId")
+            if not dec_arg:
+                await self.send(
+                    text_data=build_error("INVALID_ARGUMENT", "decisionId is required.", request_id)
+                )
+                return
+
+            from asgiref.sync import sync_to_async
+
+            from apps.database.repositories import DecisionRepository
+
+            did = str(dec_arg)
+
+            def get_explanation() -> dict[str, Any] | None:
+                return DecisionRepository.get_by_id(did)
+
+            decision_doc = await sync_to_async(get_explanation)()
+
             await self.send(
                 text_data=build_response(
                     "decision.explain.response",
-                    {"decisionId": decision_id, "explanation": None},
+                    {"decisionId": did, "decision": decision_doc},
                     request_id=request_id,
                 )
             )

@@ -157,9 +157,16 @@ async def test_websocket_payload_too_large_rejected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_websocket_duplicate_execution_blocked() -> None:
+async def test_websocket_duplicate_execution_blocked(mock_db) -> None:
     """Acceptance Test: Duplicate recovery actions in the same session are blocked."""
-    user = {"id": "usr_test_123", "username": "operator"}
+    from apps.database.repositories import PaymentRepository
+    PaymentRepository.create({
+        "payment_id": "pay_test_dup_001",
+        "amount": 100000,
+        "status": "failed",
+    })
+
+    user = {"id": "usr_test_123", "username": "operator", "role": "operator"}
     communicator = WebsocketTestCommunicator(RevenueOSConsumer.as_asgi(), user=user)
     await communicator.connect()
 
@@ -175,11 +182,14 @@ async def test_websocket_duplicate_execution_blocked() -> None:
         },
     }
 
-    # First attempt succeeds / queues
+    # First attempt succeeds: approved then executed
     await communicator.send_to(text_data=json.dumps(execute_frame))
-    res1 = json.loads(await communicator.receive_from())
-    assert res1["type"] == "recovery.executed"
-    assert res1["payload"]["status"] == "QUEUED"
+    msg1 = json.loads(await communicator.receive_from())
+    assert msg1["type"] == "recovery.approved"
+
+    msg2 = json.loads(await communicator.receive_from())
+    assert msg2["type"] == "recovery.executed"
+    assert msg2["payload"]["status"] == "QUEUED"
 
     # Second immediate duplicate attempt with same idempotency key is blocked
     execute_frame["requestId"] = "req_exec_002"
