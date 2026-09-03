@@ -198,18 +198,20 @@ async def test_websocket_rate_limiting() -> None:
     communicator = WebsocketTestCommunicator(RevenueOSConsumer.as_asgi(), user=user)
     await communicator.connect()
 
-    sensitive_frame = {
-        "protocolVersion": "v1",
-        "requestId": "req_burst",
-        "type": "recovery.analyze",
-        "payload": {"paymentId": "pay_test_rate_001"},
-    }
-
     rate_limited = False
     # Burst 15 calls (sensitive capacity is 10)
     for i in range(15):
-        sensitive_frame["requestId"] = f"req_burst_{i}"
-        await communicator.send_to(text_data=json.dumps(sensitive_frame))
+        frame = {
+            "protocolVersion": "v1",
+            "requestId": f"req_burst_{i}",
+            "type": "recovery.execute",
+            "payload": {
+                "paymentId": f"pay_burst_{i}",
+                "action": "PAYMENT_LINK",
+                "idempotencyKey": f"idemp_burst_{i}",
+            },
+        }
+        await communicator.send_to(text_data=json.dumps(frame))
         res = json.loads(await communicator.receive_from())
         if res.get("type") == "error" and res.get("error", {}).get("code") == "RATE_LIMITED":
             rate_limited = True

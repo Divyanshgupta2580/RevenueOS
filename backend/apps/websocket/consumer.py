@@ -195,10 +195,44 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                 )
                 return
 
+            pid = str(payment_id)
             await self.send(
                 text_data=build_response(
                     "analysis.started",
-                    {"paymentId": payment_id},
+                    {"paymentId": pid},
+                    request_id=request_id,
+                )
+            )
+
+            from asgiref.sync import sync_to_async
+
+            from apps.brain.service import RecoveryBrainService
+            from apps.database.repositories import PaymentRepository
+
+            def run_brain_analysis() -> dict[str, Any] | None:
+                payment = PaymentRepository.get_by_id(pid)
+                if not payment:
+                    return None
+                brain_svc = RecoveryBrainService()
+                recommendation = brain_svc.analyze_payment(payment)
+                return recommendation.model_dump()
+
+            result = await sync_to_async(run_brain_analysis)()
+
+            if result is None:
+                await self.send(
+                    text_data=build_error(
+                        "NOT_FOUND",
+                        f"Payment with ID '{pid}' was not found.",
+                        request_id=request_id,
+                    )
+                )
+                return
+
+            await self.send(
+                text_data=build_response(
+                    "analysis.completed",
+                    {"paymentId": pid, "recommendation": result},
                     request_id=request_id,
                 )
             )
