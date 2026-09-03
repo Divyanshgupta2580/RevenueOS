@@ -1,80 +1,280 @@
-import { ShieldAlert, Activity, DollarSign, ArrowUpRight } from "lucide-react";
+"use client";
 
-export default function Home() {
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import Header from "@/components/Header";
+import MetricsCards from "@/components/MetricsCards";
+import RadarTable from "@/components/RadarTable";
+import OpportunityDrawer from "@/components/OpportunityDrawer";
+import DecisionLedger from "@/components/DecisionLedger";
+import MetricsView from "@/components/MetricsView";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import type {
+  BrainRecommendation,
+  DecisionRecord,
+  MetricSummary,
+  Opportunity,
+  PolicyVerdict,
+  ServerMessage,
+  UserContext,
+} from "@/lib/types";
+
+export default function CommandCenterPage() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"radar" | "ledger" | "metrics">("radar");
+  const [user, setUser] = useState<UserContext | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  // Domain state
+  const [metrics, setMetrics] = useState<MetricSummary | null>(null);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
+  const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+  const [loadingOpps, setLoadingOpps] = useState(false);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+
+  const { state: connectionState, isConnected, request, send, on } = useWebSocket();
+
+  // 1. Session verification on mount
+  useEffect(() => {
+    const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://127.0.0.1:8000";
+    fetch(`${apiOrigin}/api/auth/me/`, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) {
+          router.push("/login");
+          return null;
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (data?.authenticated && data.user) {
+          setUser(data.user);
+        }
+      })
+      .catch(() => {
+        router.push("/login");
+      })
+      .finally(() => {
+        setAuthChecking(false);
+      });
+  }, [router]);
+
+  // 2. Request fresh data
+  const refreshData = useCallback(() => {
+    if (isConnected) {
+      send("revenue.list", { page: 1, limit: 50 });
+      send("metrics.summary", {});
+    }
+  }, [isConnected, send]);
+
+  // 3. Subscribe to real-time WebSocket events
+  useEffect(() => {
+    const unsubList = on("revenue.list.response", (msg: ServerMessage) => {
+      const p = msg.payload as { opportunities?: Opportunity[] } | undefined;
+      setOpportunities(p?.opportunities || []);
+      setLoadingOpps(false);
+    });
+
+    const unsubMetrics = on("metrics.summary.response", (msg: ServerMessage) => {
+      const p = msg.payload as MetricSummary | undefined;
+      if (p) setMetrics(p);
+      setLoadingMetrics(false);
+    });
+
+    const unsubMetricsUpdate = on("metrics.updated", (msg: ServerMessage) => {
+      const p = msg.payload as MetricSummary | undefined;
+      if (p) setMetrics(p);
+    });
+
+    const unsubRevUpdated = on("revenue.updated", () => {
+      refreshData();
+    });
+
+    const unsubPaymentUpdated = on("payment.updated", () => {
+      refreshData();
+    });
+
+    return () => {
+      unsubList();
+      unsubMetrics();
+      unsubMetricsUpdate();
+      unsubRevUpdated();
+      unsubPaymentUpdated();
+    };
+  }, [on, refreshData]);
+
+  // 4. Initial fetch on connect
+  useEffect(() => {
+    if (isConnected) {
+      refreshData();
+    }
+  }, [isConnected, refreshData]);
+
+  // 5. Logout
+  const handleLogout = async () => {
+    const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://127.0.0.1:8000";
+    try {
+      await fetch(`${apiOrigin}/api/auth/logout/`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignored
+    }
+    router.push("/login");
+  };
+
+  // 6. Gemini Recovery Brain invocation
+  const handleAnalyzeOpportunity = async (paymentId: string): Promise<BrainRecommendation | null> => {
+    try {
+      const resp = await request<{ paymentId: string }, { recommendation?: BrainRecommendation }>(
+        "recovery.analyze",
+        { paymentId },
+        12000
+      );
+      return resp.payload?.recommendation || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // 7. Guarded Autopilot execution
+  const handleExecuteOpportunity = async (
+    paymentId: string,
+    action: string,
+    recommendation?: BrainRecommendation
+  ): Promise<{ status: string; verdict?: PolicyVerdict; result?: Record<string, unknown> } | null> => {
+    try {
+      const resp = await request<
+        { paymentId: string; action: string; aiRecommendation?: BrainRecommendation },
+        Record<string, unknown>
+      >(
+        "recovery.execute",
+        { paymentId, action, aiRecommendation: recommendation },
+        12000
+      );
+
+      const msgType = resp.type;
+      const payload = resp.payload || {};
+
+      if (msgType === "recovery.blocked") {
+        const verdict: PolicyVerdict = {
+          status: "BLOCKED",
+          blockingRule: (payload.blockingRule as string) || "POLICY_RULE",
+          blockingReason: (payload.blockingReason as string) || "Action blocked by policy.",
+          rulesEvaluated: [],
+          evaluatedAt: new Date().toISOString(),
+        };
+        setDecisions((prev) => [
+          {
+            decisionId: (payload.decisionId as string) || `dec_${Date.now()}`,
+            paymentId,
+            modelVersion: "gemini-2.5-flash",
+            aiRecommendation: recommendation || {
+              action: "RETRY",
+              confidence: 0.8,
+              expectedRecoveryValuePaise: 0,
+              reason: "Evaluated",
+              supportingFactors: [],
+              riskFactors: [],
+              reasoningSummary: "",
+            },
+            policyDecision: verdict,
+            createdAt: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+        return { status: "BLOCKED", verdict };
+      }
+
+      // Approved / Executed
+      const verdict: PolicyVerdict = {
+        status: "APPROVED",
+        authorizedAction: action,
+        rulesEvaluated: [],
+        evaluatedAt: new Date().toISOString(),
+      };
+
+      setDecisions((prev) => [
+        {
+          decisionId: (payload.decisionId as string) || `dec_${Date.now()}`,
+          paymentId,
+          modelVersion: "gemini-2.5-flash",
+          aiRecommendation: recommendation || {
+            action: action as "RETRY" | "PAYMENT_LINK" | "REMINDER" | "STOP",
+            confidence: 0.9,
+            expectedRecoveryValuePaise: 0,
+            reason: "Authorized by Guarded Autopilot",
+            supportingFactors: [],
+            riskFactors: [],
+            reasoningSummary: "",
+          },
+          policyDecision: verdict,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+
+      refreshData();
+      return { status: "APPROVED", verdict, result: payload };
+    } catch {
+      return { status: "ERROR" };
+    }
+  };
+
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-[#08090b] flex items-center justify-center text-zinc-400 text-xs">
+        <div className="inline-block w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mr-2" />
+        Authenticating operator session...
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#0A0D12] text-[#F3F4F6]">
-      {/* Top Header */}
-      <header className="border-b border-[#1F2430] bg-[#0E121B] px-6 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[#F59E0B]">
-              <Activity className="h-5 w-5" />
-            </div>
-            <div>
-              <span className="text-base font-semibold tracking-tight text-white">RevenueOS</span>
-              <span className="ml-2 text-xs font-mono text-[#9CA3AF]">v1.0.0</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1F2430] px-3 py-1 text-xs font-mono text-[#9CA3AF]">
-              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
-              WS Standby
-            </span>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#08090b] text-[#f0f6fc] flex flex-col">
+      <Header
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        connectionState={connectionState}
+        user={user}
+        onLogout={handleLogout}
+      />
 
-      {/* Main Content Area */}
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        {/* Metric Cards Skeleton */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-[#1F2430] bg-[#121722] p-5">
-            <div className="flex items-center justify-between text-[#9CA3AF]">
-              <span className="text-xs font-medium uppercase tracking-wider">Revenue at Risk</span>
-              <DollarSign className="h-4 w-4" />
-            </div>
-            <div className="mt-3 text-2xl font-semibold text-white">₹0.00</div>
-            <div className="mt-1 text-xs text-[#6B7280]">No active failed payments</div>
-          </div>
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6">
+        {/* Top KPI Metrics Banner */}
+        <MetricsCards metrics={metrics} loading={loadingMetrics} />
 
-          <div className="rounded-lg border border-[#1F2430] bg-[#121722] p-5">
-            <div className="flex items-center justify-between text-[#9CA3AF]">
-              <span className="text-xs font-medium uppercase tracking-wider">Expected Recoverable</span>
-              <ArrowUpRight className="h-4 w-4 text-[#F59E0B]" />
-            </div>
-            <div className="mt-3 text-2xl font-semibold text-white">₹0.00</div>
-            <div className="mt-1 text-xs text-[#6B7280]">Calculated via ERV engine</div>
-          </div>
+        {/* Tab 1: Revenue Radar */}
+        {activeTab === "radar" && (
+          <RadarTable
+            opportunities={opportunities}
+            loading={loadingOpps}
+            onSelectOpportunity={(opp) => setSelectedOpp(opp)}
+            onRefresh={refreshData}
+          />
+        )}
 
-          <div className="rounded-lg border border-[#1F2430] bg-[#121722] p-5">
-            <div className="flex items-center justify-between text-[#9CA3AF]">
-              <span className="text-xs font-medium uppercase tracking-wider">Actually Recovered</span>
-              <Activity className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div className="mt-3 text-2xl font-semibold text-emerald-400">₹0.00</div>
-            <div className="mt-1 text-xs text-[#6B7280]">Verified Razorpay outcomes</div>
-          </div>
+        {/* Tab 2: Decision Ledger */}
+        {activeTab === "ledger" && (
+          <DecisionLedger
+            decisions={decisions}
+            loading={false}
+          />
+        )}
 
-          <div className="rounded-lg border border-[#1F2430] bg-[#121722] p-5">
-            <div className="flex items-center justify-between text-[#9CA3AF]">
-              <span className="text-xs font-medium uppercase tracking-wider">Incremental Lift</span>
-              <span className="text-xs font-mono text-[#F59E0B]">vs Baseline</span>
-            </div>
-            <div className="mt-3 text-2xl font-semibold text-white">₹0.00</div>
-            <div className="mt-1 text-xs text-[#6B7280]">Counterfactual lift (Y - X)</div>
-          </div>
-        </div>
+        {/* Tab 3: Outcome Metrics */}
+        {activeTab === "metrics" && (
+          <MetricsView metrics={metrics} />
+        )}
 
-        {/* Empty State Banner */}
-        <div className="mt-8 rounded-lg border border-dashed border-[#262D3D] bg-[#0E121B] p-12 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#1F2430] text-[#9CA3AF]">
-            <ShieldAlert className="h-6 w-6" />
-          </div>
-          <h3 className="mt-4 text-base font-semibold text-white">No Payment Data Connected Yet</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-[#9CA3AF]">
-            Connect your Razorpay Test credentials or configure incoming webhooks to begin monitoring and recovering at-risk revenue.
-          </p>
-        </div>
+        {/* Opportunity Detail Drawer */}
+        <OpportunityDrawer
+          opportunity={selectedOpp}
+          onClose={() => setSelectedOpp(null)}
+          onAnalyze={handleAnalyzeOpportunity}
+          onExecute={handleExecuteOpportunity}
+        />
       </main>
     </div>
   );

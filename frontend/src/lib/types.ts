@@ -24,6 +24,7 @@ export type ServerMessageType =
   | "recovery.blocked"
   | "recovery.executed"
   | "payment.updated"
+  | "payment_link.updated"
   | "decision.created"
   | "decision.explain.response"
   | "metrics.summary.response"
@@ -73,4 +74,54 @@ export interface MetricSummary {
   incrementalRevenuePaise: number;
   recoveryRate: number;
   activeOpportunities: number;
+}
+
+export interface Opportunity {
+  paymentId: string;
+  amountPaise: number;
+  currency: string;
+  status: string;
+  failureCategory: string;
+  failureReason: string;
+  retryCount: number;
+  maxRetries: number;
+  recoverabilityScore: number;
+  expectedRecoveryValuePaise: number;
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  recoveryStatus: string;
+  createdAt: string;
+}
+
+export interface BrainRecommendation {
+  action: "RETRY" | "PAYMENT_LINK" | "REMINDER" | "STOP";
+  confidence: number;
+  expectedRecoveryValuePaise: number;
+  reason: string;
+  supportingFactors: string[];
+  riskFactors: string[];
+  reasoningSummary: string;
+}
+
+export interface RuleEvaluation {
+  ruleName: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface PolicyVerdict {
+  status: "APPROVED" | "BLOCKED";
+  authorizedAction?: string | null;
+  blockingRule?: string | null;
+  blockingReason?: string | null;
+  rulesEvaluated: RuleEvaluation[];
+  evaluatedAt: string;
+}
+
+export interface DecisionRecord {
+  decisionId: string;
+  paymentId: string;
+  modelVersion: string;
+  aiRecommendation: BrainRecommendation;
+  policyDecision: PolicyVerdict;
+  createdAt: string;
 }
