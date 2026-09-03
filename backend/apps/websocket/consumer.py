@@ -127,16 +127,29 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             return
 
         if msg_type == "revenue.list":
-            # Baseline radar listing (returns empty dataset per absolute no-dummy data policy)
+            page = int(payload.get("page", 1))
+            page_size = int(payload.get("pageSize", 20))
+            status_filter = str(payload.get("status", "failed"))
+
+            from asgiref.sync import sync_to_async
+
+            from apps.database.repositories import PaymentRepository
+            from apps.radar.service import RevenueRadarService
+
+            def fetch_and_rank() -> dict[str, Any]:
+                payments, _ = PaymentRepository.list_opportunities(
+                    status=status_filter, page=page, page_size=page_size
+                )
+                return RevenueRadarService.rank_opportunities(
+                    payments, page=page, page_size=page_size
+                )
+
+            radar_data = await sync_to_async(fetch_and_rank)()
+
             await self.send(
                 text_data=build_response(
                     "revenue.list.response",
-                    {
-                        "opportunities": [],
-                        "totalCount": 0,
-                        "page": payload.get("page", 1),
-                        "pageSize": payload.get("pageSize", 20),
-                    },
+                    radar_data,
                     request_id=request_id,
                 )
             )
@@ -149,10 +162,26 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                     text_data=build_error("INVALID_ARGUMENT", "paymentId is required.", request_id)
                 )
                 return
+
+            from asgiref.sync import sync_to_async
+
+            from apps.database.repositories import PaymentRepository
+            from apps.radar.service import RevenueRadarService
+
+            pid = str(payment_id)
+
+            def fetch_detail() -> dict[str, Any] | None:
+                payment = PaymentRepository.get_by_id(pid)
+                if not payment:
+                    return None
+                return RevenueRadarService.evaluate_opportunity(payment)
+
+            opportunity = await sync_to_async(fetch_detail)()
+
             await self.send(
                 text_data=build_response(
                     "revenue.details.response",
-                    {"opportunity": None},
+                    {"opportunity": opportunity},
                     request_id=request_id,
                 )
             )

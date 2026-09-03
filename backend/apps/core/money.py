@@ -64,3 +64,7 @@ def calculate_expected_recovery_value(
 
     erv_dec = (dec_amount * dec_p_rec * dec_p_act).quantize(Decimal("1"), rounding=ROUND_HALF_EVEN)
     return int(erv_dec)
+
+
+calculate_erv = calculate_expected_recovery_value
+format_paise_to_inr_string = paise_to_formatted_inr
