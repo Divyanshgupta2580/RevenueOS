@@ -237,6 +237,12 @@ class ActionRepository:
         return dict(doc) if doc else None
 
     @classmethod
+    def get_by_id(cls, action_id: str) -> dict[str, Any] | None:
+        col = cls.get_collection()
+        doc = col.find_one({"action_id": action_id}, {"_id": 0})
+        return dict(doc) if doc else None
+
+    @classmethod
     def update_outcome(
         cls,
         action_id: str,

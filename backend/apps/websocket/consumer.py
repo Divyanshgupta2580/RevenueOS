@@ -221,7 +221,9 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                     return None
                 brain_svc = RecoveryBrainService()
                 recommendation = brain_svc.analyze_payment(payment)
-                return recommendation.model_dump()
+                if hasattr(recommendation, "model_dump"):
+                    return recommendation.model_dump()
+                return dict(recommendation)
 
             result = await sync_to_async(run_brain_analysis)()
 
@@ -367,18 +369,19 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             return
 
         if msg_type == "metrics.summary":
-            # Clean empty metric baseline (per absolute no dummy data rule)
+            from asgiref.sync import sync_to_async
+
+            from apps.metrics.service import MetricsService
+
+            def get_metrics() -> dict[str, Any]:
+                return MetricsService.compute_summary()
+
+            summary_data = await sync_to_async(get_metrics)()
+
             await self.send(
                 text_data=build_response(
                     "metrics.summary.response",
-                    {
-                        "revenueAtRiskPaise": 0,
-                        "expectedRecoverablePaise": 0,
-                        "actuallyRecoveredPaise": 0,
-                        "incrementalRevenuePaise": 0,
-                        "recoveryRate": 0.0,
-                        "activeOpportunities": 0,
-                    },
+                    summary_data,
                     request_id=request_id,
                 )
             )

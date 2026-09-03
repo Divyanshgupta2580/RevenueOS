@@ -46,18 +46,31 @@ class InMemoryCollection:
         mock_result.inserted_id = doc_copy["_id"]
         return mock_result
 
+    def _match_doc(self, doc: dict[str, Any], query: dict[str, Any] | None) -> bool:
+        if not query:
+            return True
+        for k, v in query.items():
+            val = doc.get(k)
+            if isinstance(v, dict):
+                if "$in" in v:
+                    if val not in v["$in"]:
+                        return False
+                elif "$exists" in v:
+                    if bool(k in doc) != bool(v["$exists"]):
+                        return False
+                elif val != v:
+                    return False
+            elif val != v:
+                return False
+        return True
+
     def find_one(
         self,
         query: dict[str, Any],
         projection: dict[str, int] | None = None,
     ) -> dict[str, Any] | None:
         for doc in self.documents:
-            match = True
-            for k, v in query.items():
-                if doc.get(k) != v:
-                    match = False
-                    break
-            if match:
+            if self._match_doc(doc, query):
                 res = dict(doc)
                 if projection and projection.get("_id") == 0 and "_id" in res:
                     del res["_id"]
@@ -71,15 +84,7 @@ class InMemoryCollection:
     ) -> InMemoryCursor:
         matched: list[dict[str, Any]] = []
         for doc in self.documents:
-            if not query:
-                matched.append(dict(doc))
-                continue
-            match = True
-            for k, v in query.items():
-                if doc.get(k) != v:
-                    match = False
-                    break
-            if match:
+            if self._match_doc(doc, query):
                 matched.append(dict(doc))
 
         if projection and projection.get("_id") == 0:
@@ -177,6 +182,7 @@ def mock_db():
     in_memory_db = InMemoryDatabase()
     with patch("apps.database.client.get_database", return_value=in_memory_db), \
          patch("apps.database.repositories.get_database", return_value=in_memory_db), \
+         patch("apps.metrics.service.get_database", return_value=in_memory_db), \
          patch("apps.webhooks.processor.get_database", return_value=in_memory_db), \
          patch("apps.authentication.services.get_database", return_value=in_memory_db), \
          patch("apps.authentication.views.get_database", return_value=in_memory_db):
