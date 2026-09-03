@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: revenueos-backend
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && PYTHONPATH=. python -m uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: PYTHONPATH
+        value: backend
+      - key: DJANGO_SETTINGS_MODULE
+        value: revenueos.settings
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: revenueos-backend.onrender.com,localhost,127.0.0.1
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        value: https://revenueos-backend.onrender.com,https://revenueos.vercel.app
+      - key: FRONTEND_ORIGIN
+        value: https://revenueos.vercel.app
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: revenueos_production
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: TURNSTILE_SECRET_KEY
+        sync: false

@@ -19,13 +19,30 @@ def health_check(request) -> JsonResponse:
 
 
 def readiness_check(request) -> JsonResponse:
-    """Readiness probe checking critical service components."""
-    return JsonResponse(
-        {
-            "status": "ready",
-            "service": "RevenueOS Backend",
-        }
-    )
+    """Readiness probe checking critical service components and database connection."""
+    from apps.database.client import get_database
+    try:
+        db = get_database()
+        # Test collection access
+        _ = db.users.count_documents({})
+        return JsonResponse(
+            {
+                "status": "ready",
+                "service": "RevenueOS Backend",
+                "database": "connected",
+            },
+            status=200,
+        )
+    except Exception as exc:
+        return JsonResponse(
+            {
+                "status": "degraded",
+                "service": "RevenueOS Backend",
+                "database": "disconnected",
+                "error": str(exc),
+            },
+            status=503,
+        )
 
 
 urlpatterns = [
