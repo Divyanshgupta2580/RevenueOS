@@ -121,4 +121,29 @@ test.describe("RevenueOS End-to-End User Journey", () => {
     const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
     expect(emojiRegex.test(content)).toBeFalsy();
   });
+
+  test("8. Razorpay Checkout tab and /checkout route render standard checkout interface", async ({ page }) => {
+    // Test standalone /checkout page
+    await page.goto("/checkout");
+    await expect(page.locator("text=Razorpay Standard Web Checkout")).toBeVisible();
+    await expect(page.locator("button:has-text('Pay ₹500.00 with Razorpay')")).toBeVisible();
+    await expect(page.locator("text=HMAC-SHA256 Verified")).toBeVisible();
+
+    // Test dashboard Checkout tab
+    await page.route("**/api/auth/me/", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          user: { username: "operator", role: "operator" },
+        }),
+      });
+    });
+
+    await page.goto("/");
+    await page.locator("button:has-text('Checkout')").click();
+    await expect(page.locator("text=Razorpay Standard Web Checkout")).toBeVisible();
+    await expect(page.locator("text=Standard Checkout Architecture Flow")).toBeVisible();
+  });
 });

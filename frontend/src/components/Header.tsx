@@ -1,11 +1,11 @@
 "use client";
 
-import { Activity, Radio, Shield, LogOut } from "lucide-react";
+import { Activity, Radio, Shield, LogOut, CreditCard } from "lucide-react";
 import type { ConnectionState, UserContext } from "@/lib/types";
 
 interface HeaderProps {
-  activeTab: "radar" | "ledger" | "metrics";
-  setActiveTab: (tab: "radar" | "ledger" | "metrics") => void;
+  activeTab: "radar" | "ledger" | "metrics" | "checkout";
+  setActiveTab: (tab: "radar" | "ledger" | "metrics" | "checkout") => void;
   connectionState: ConnectionState;
   user: UserContext | null;
   onLogout: () => void;
@@ -71,6 +71,17 @@ export default function Header({
               }`}
             >
               Outcome Metrics
+            </button>
+            <button
+              onClick={() => setActiveTab("checkout")}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                activeTab === "checkout"
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+              }`}
+            >
+              <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+              Checkout
             </button>
           </nav>
         </div>

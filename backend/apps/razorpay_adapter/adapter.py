@@ -178,3 +178,72 @@ class RazorpayAdapter:
         if norm_medium not in ["sms", "email"]:
             norm_medium = "sms"
         return self._request("POST", f"payment_links/{link_id}/notify_by/{norm_medium}")
+
+    def create_order(
+        self,
+        amount_paise: int,
+        currency: str = "INR",
+        receipt: str | None = None,
+        notes: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a Razorpay Standard Checkout order. Minimum 100 paise."""
+        if not isinstance(amount_paise, int) or amount_paise < 100:
+            raise ValueError(f"Amount must be an integer of at least 100 paise, got {amount_paise}")
+
+        if not self.is_configured():
+            if self.simulate_if_unconfigured:
+                import uuid
+                order_id = f"order_sim_{uuid.uuid4().hex[:14]}"
+                logger.info(f"Razorpay unconfigured: returning simulated order {order_id}")
+                return {
+                    "id": order_id,
+                    "order_id": order_id,
+                    "amount": amount_paise,
+                    "currency": currency,
+                    "status": "created",
+                    "receipt": receipt or f"rcpt_{uuid.uuid4().hex[:8]}",
+                    "simulated": True,
+                }
+            raise RazorpayAuthError("Razorpay credentials (KEY_ID / KEY_SECRET) are not configured.")
+
+        payload: dict[str, Any] = {
+            "amount": amount_paise,
+            "currency": currency,
+        }
+        if receipt:
+            payload["receipt"] = receipt
+        if notes:
+            payload["notes"] = notes
+
+        resp = self._request("POST", "orders", json_data=payload)
+        if "id" in resp and "order_id" not in resp:
+            resp["order_id"] = resp["id"]
+        return resp
+
+    def verify_payment_signature(
+        self,
+        order_id: str,
+        payment_id: str,
+        signature: str,
+    ) -> bool:
+        """Verify HMAC-SHA256 signature for Standard Checkout.
+
+        Algorithm: HMAC-SHA256(order_id + "|" + payment_id, KEY_SECRET)
+        """
+        if not order_id or not payment_id or not signature:
+            return False
+
+        if not self.key_secret:
+            raise RazorpayAuthError("Razorpay KEY_SECRET is not configured.")
+
+        import hashlib
+        import hmac
+
+        msg = f"{order_id}|{payment_id}".encode()
+        expected_signature = hmac.new(
+            self.key_secret.encode("utf-8"),
+            msg,
+            hashlib.sha256,
+        ).hexdigest()
+
+        return hmac.compare_digest(expected_signature, signature)

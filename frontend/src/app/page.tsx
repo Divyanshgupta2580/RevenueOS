@@ -8,6 +8,7 @@ import RadarTable from "@/components/RadarTable";
 import OpportunityDrawer from "@/components/OpportunityDrawer";
 import DecisionLedger from "@/components/DecisionLedger";
 import MetricsView from "@/components/MetricsView";
+import RazorpayCheckoutView from "@/components/RazorpayCheckoutView";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import type {
   BrainRecommendation,
@@ -21,7 +22,7 @@ import type {
 
 export default function CommandCenterPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"radar" | "ledger" | "metrics">("radar");
+  const [activeTab, setActiveTab] = useState<"radar" | "ledger" | "metrics" | "checkout">("radar");
   const [user, setUser] = useState<UserContext | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
 
@@ -266,6 +267,11 @@ export default function CommandCenterPage() {
         {/* Tab 3: Outcome Metrics */}
         {activeTab === "metrics" && (
           <MetricsView metrics={metrics} />
+        )}
+
+        {/* Tab 4: Razorpay Standard Checkout */}
+        {activeTab === "checkout" && (
+          <RazorpayCheckoutView onPaymentComplete={() => refreshData()} />
         )}
 
         {/* Opportunity Detail Drawer */}

@@ -1,9 +1,10 @@
 "use client";
 
-import { X, Sparkles, Shield, CheckCircle, AlertOctagon, ArrowRight } from "lucide-react";
+import { X, Sparkles, Shield, CheckCircle, AlertOctagon, ArrowRight, CreditCard, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type { BrainRecommendation, Opportunity, PolicyVerdict } from "@/lib/types";
 import { formatPaiseToRupees } from "@/lib/format";
+import { launchRazorpayCheckout } from "@/lib/razorpay";
 
 interface OpportunityDrawerProps {
   opportunity: Opportunity | null;
@@ -30,6 +31,8 @@ export default function OpportunityDrawer({
     verdict?: PolicyVerdict;
     result?: Record<string, unknown>;
   } | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [checkoutMsg, setCheckoutMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   if (!opportunity) return null;
 
@@ -52,6 +55,48 @@ export default function OpportunityDrawer({
       setExecutionResult(res);
     } finally {
       setExecuting(false);
+    }
+  };
+
+  const handleRazorpayModalCheckout = async () => {
+    setCheckingOut(true);
+    setCheckoutMsg(null);
+    try {
+      await launchRazorpayCheckout({
+        amountPaise: opportunity.amountPaise,
+        currency: "INR",
+        name: "RevenueOS Recovery Checkout",
+        description: `Recovery payment for ${opportunity.paymentId}`,
+        paymentReference: opportunity.paymentId,
+        onSuccess: (res) => {
+          setCheckingOut(false);
+          setCheckoutMsg({
+            type: "success",
+            text: `Payment ${res.payment_id} verified via HMAC-SHA256 and captured!`,
+          });
+        },
+        onDismiss: () => {
+          setCheckingOut(false);
+          setCheckoutMsg({
+            type: "error",
+            text: "Checkout modal dismissed. Payment was cancelled.",
+          });
+        },
+        onFailure: (err) => {
+          setCheckingOut(false);
+          setCheckoutMsg({
+            type: "error",
+            text: err.description || "Razorpay payment processing failed.",
+          });
+        },
+      });
+    } catch (err: unknown) {
+      setCheckingOut(false);
+      const errMsg = err instanceof Error ? err.message : "Failed to open Razorpay checkout modal.";
+      setCheckoutMsg({
+        type: "error",
+        text: errMsg,
+      });
     }
   };
 
@@ -225,6 +270,38 @@ export default function OpportunityDrawer({
               </>
             )}
           </button>
+
+          {/* Direct Razorpay Standard Modal Trigger */}
+          <button
+            onClick={handleRazorpayModalCheckout}
+            disabled={checkingOut || opportunity.status === "captured" || opportunity.recoveryStatus === "recovered"}
+            className="w-full mt-2 py-2 px-4 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium text-xs transition-colors disabled:opacity-50 flex items-center justify-center gap-2 font-mono"
+          >
+            {checkingOut ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                <span>Launching Razorpay Modal...</span>
+              </>
+            ) : (
+              <>
+                <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+                <span>Pay via Razorpay Modal ({formatPaiseToRupees(opportunity.amountPaise)})</span>
+              </>
+            )}
+          </button>
+
+          {/* Razorpay Modal Notice */}
+          {checkoutMsg && (
+            <div
+              className={`mt-2 p-2.5 rounded border text-xs font-mono ${
+                checkoutMsg.type === "success"
+                  ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+                  : "bg-rose-950/40 border-rose-500/30 text-rose-300"
+              }`}
+            >
+              {checkoutMsg.text}
+            </div>
+          )}
 
           {/* Execution Result Banner */}
           {executionResult && (
