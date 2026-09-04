@@ -174,6 +174,8 @@ async def test_full_end_to_end_recovery_pipeline(client: Client, mock_db, webhoo
     # Step 7: Verify live broadcast was received by connected operator WebSocket
     ws_notification = json.loads(await communicator.receive_from())
     assert ws_notification["type"] in ["payment.updated", "revenue.updated"]
+    ws_notification_2 = json.loads(await communicator.receive_from())
+    assert ws_notification_2["type"] in ["payment.updated", "revenue.updated"]
 
     # Step 8: Verify payment is now recovered and action is marked RECOVERED
     recovered_payment = PaymentRepository.get_by_id("pay_pipe_001")

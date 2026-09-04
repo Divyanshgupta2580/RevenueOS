@@ -39,8 +39,8 @@ export default function RazorpayCheckoutView({
   onPaymentComplete,
 }: RazorpayCheckoutViewProps) {
   const [amountPaise, setAmountPaise] = useState<number>(initialAmountPaise);
-  const [customerEmail, setCustomerEmail] = useState("operator@revenueos.local");
-  const [customerContact, setCustomerContact] = useState("9999999999");
+  const [customerEmail, setCustomerEmail] = useState("operator@revenueos.com");
+  const [customerContact, setCustomerContact] = useState("9820123456");
   const [notes, setNotes] = useState("Revenue recovery checkout via RevenueOS");
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -134,11 +134,19 @@ export default function RazorpayCheckoutView({
         onFailure: (err) => {
           setLoading(false);
           setStatusMessage(null);
-          setError(
+          const failMsg =
             err.description ||
-              `Payment failed: ${err.reason || err.code || "Transaction declined"}`
+            `Payment failed: ${err.reason || err.code || "Transaction declined"}`;
+          setError(
+            err.payment_id
+              ? `${failMsg} (Authentic failure recorded: ${err.payment_id})`
+              : failMsg
           );
+          if (onPaymentComplete && err.payment_id) {
+            onPaymentComplete(err.payment_id);
+          }
         },
+
       });
     } catch (err: unknown) {
       setLoading(false);

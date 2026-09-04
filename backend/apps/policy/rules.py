@@ -22,6 +22,7 @@ class PolicyEvaluationResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "ruleName": self.rule_name,
+            "rule_name": self.rule_name,
             "passed": self.passed,
             "reason": self.reason,
         }
@@ -32,11 +33,12 @@ def check_user_authorization(user: dict[str, Any] | None) -> PolicyEvaluationRes
     if not user:
         return PolicyEvaluationResult(False, "USER_AUTHORIZATION", "User context is missing or unauthenticated.")
 
-    role = user.get("role", "operator")
+    raw_role = user.get("role", "operator")
+    role = str(raw_role).lower().strip()
     if role not in ALLOWED_ROLES:
-        return PolicyEvaluationResult(False, "USER_AUTHORIZATION", f"Role '{role}' is not authorized to trigger actions.")
+        return PolicyEvaluationResult(False, "USER_AUTHORIZATION", f"Role '{raw_role}' is not authorized to trigger actions.")
 
-    return PolicyEvaluationResult(True, "USER_AUTHORIZATION", f"User '{user.get('username')}' authorized with role '{role}'.")
+    return PolicyEvaluationResult(True, "USER_AUTHORIZATION", f"User '{user.get('username')}' authorized with role '{raw_role}'.")
 
 
 def check_supported_action(action: str) -> PolicyEvaluationResult:

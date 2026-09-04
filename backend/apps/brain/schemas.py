@@ -188,5 +188,8 @@ class DecisionExplanationOutput(BaseModel):
     explanation: str = Field(min_length=10, max_length=1000)
     key_factors: list[str] = Field(default_factory=list)
     policy_alignment: str = Field(default="Fully aligned with merchant policy.")
+    counterfactual: str | None = Field(default=None)
+    counterfactuals: list[str] = Field(default_factory=list)
     outcome_assessment: str | None = None
     latency_ms: float | None = None
+

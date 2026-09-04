@@ -50,13 +50,35 @@ class InMemoryCollection:
         if not query:
             return True
         for k, v in query.items():
-            val = doc.get(k)
+            if k == "$or" and isinstance(v, list):
+                if not any(self._match_doc(doc, cond) for cond in v):
+                    return False
+                continue
+
+            # Support dot notation for nested fields
+            if "." in k:
+                curr: Any = doc
+                for part in k.split("."):
+                    if isinstance(curr, dict):
+                        curr = curr.get(part)
+                    else:
+                        curr = None
+                        break
+                val = curr
+            else:
+                val = doc.get(k)
+
+
             if isinstance(v, dict):
                 if "$in" in v:
                     if val not in v["$in"]:
                         return False
                 elif "$exists" in v:
                     if bool(k in doc) != bool(v["$exists"]):
+                        return False
+                elif "$regex" in v:
+                    pattern = str(v["$regex"]).lower()
+                    if pattern not in str(val or "").lower():
                         return False
                 elif val != v:
                     return False
@@ -108,24 +130,25 @@ class InMemoryCollection:
         if not doc:
             return None
         if "$inc" in update:
-            for k, v in update["$inc"].items():
+            for k, inc_val in update["$inc"].items():
                 for d in self.documents:
-                    if d.get("payment_id") == query.get("payment_id"):
-                        d[k] = d.get(k, 0) + v
+                    if d.get("payment_id") == doc.get("payment_id"):
+                        d[k] = int(d.get(k, 0)) + int(inc_val)
                         doc[k] = d[k]
         return doc
 
     def update_one(self, query: dict[str, Any], update: dict[str, Any]) -> Any:
         doc = self.find_one(query)
-        if doc and "$set" in update:
+        if doc:
             for d in self.documents:
-                match = True
-                for k, v in query.items():
-                    if d.get(k) != v:
-                        match = False
-                        break
-                if match:
-                    d.update(update["$set"])
+                if self._match_doc(d, query):
+                    if "$set" in update:
+                        d.update(update["$set"])
+                    if "$push" in update:
+                        for pk, pv in update["$push"].items():
+                            if pk not in d or not isinstance(d[pk], list):
+                                d[pk] = []
+                            d[pk].append(pv)
                     break
         mock_res = MagicMock()
         mock_res.modified_count = 1 if doc else 0

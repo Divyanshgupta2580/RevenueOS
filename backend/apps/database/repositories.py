@@ -206,17 +206,36 @@ class DecisionRepository:
             raise DatabaseError("decision_id and payment_id are required.")
 
         from apps.brain.config import get_configured_gemini_model
+
         default_model = get_configured_gemini_model()
         now = datetime.now(UTC)
+        created_at = decision.get("created_at") or now
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.fromisoformat(created_at)
+            except Exception:
+                created_at = now
+
         doc = {
             "decision_id": decision_id,
             "payment_id": payment_id,
             "model_version": decision.get("model_version", default_model),
+            "endpoint": decision.get("endpoint", "recovery.analyze"),
+            "request_id": decision.get("request_id") or f"req_{decision_id}",
+            "payment_snapshot": decision.get("payment_snapshot", {}),
+            "evidence_summary": decision.get("evidence_summary", {}),
             "ai_recommendation": decision.get("ai_recommendation", {}),
             "policy_decision": decision.get("policy_decision", {}),
+            "execution_status": decision.get("execution_status", "PENDING"),
             "execution_result": decision.get("execution_result"),
             "execution_latency_ms": decision.get("execution_latency_ms"),
-            "created_at": decision.get("created_at", now),
+            "executed_at": decision.get("executed_at"),
+            "outcome": decision.get("outcome", "PENDING"),
+            "outcome_actual_paise": decision.get("outcome_actual_paise"),
+            "outcome_at": decision.get("outcome_at"),
+            "audit_timeline": decision.get("audit_timeline", []),
+            "created_at": created_at,
+            "updated_at": now,
         }
 
         col = cls.get_collection()
@@ -224,37 +243,150 @@ class DecisionRepository:
         return doc
 
     @classmethod
+    def update_execution(
+        cls,
+        decision_id: str,
+        execution_status: str,
+        execution_result: dict[str, Any] | None = None,
+        execution_latency_ms: float | None = None,
+        executed_at: datetime | None = None,
+        outcome: str = "PENDING",
+        actual_recovery_paise: int | None = None,
+    ) -> bool:
+        """Update decision record with execution details and append to audit timeline."""
+        col = cls.get_collection()
+        now = executed_at or datetime.now(UTC)
+        updates: dict[str, Any] = {
+            "execution_status": execution_status,
+            "execution_result": execution_result or {},
+            "executed_at": now,
+            "outcome": outcome,
+            "updated_at": now,
+        }
+        if execution_latency_ms is not None:
+            updates["execution_latency_ms"] = execution_latency_ms
+        if actual_recovery_paise is not None:
+            updates["outcome_actual_paise"] = actual_recovery_paise
+
+        timeline_entry = {
+            "stage": "EXECUTION",
+            "title": f"Recovery Action {execution_status}",
+            "status": execution_status,
+            "timestamp": now.isoformat(),
+            "details": execution_result or {},
+        }
+        res = col.update_one(
+            {"decision_id": decision_id},
+            {
+                "$set": updates,
+                "$push": {"audit_timeline": timeline_entry},
+            },
+        )
+        return bool(res.modified_count > 0)
+
+    @classmethod
+    def _format_decision_doc(cls, doc: dict[str, Any]) -> dict[str, Any]:
+        """Format decision document with standard ISO dates and camelCase aliases for the frontend."""
+        item = dict(doc)
+        for date_key in ["created_at", "updated_at", "executed_at", "outcome_at"]:
+            val = item.get(date_key)
+            if isinstance(val, datetime):
+                item[date_key] = val.isoformat()
+
+        # Format ai_recommendation
+        ai_rec = dict(item.get("ai_recommendation") or {})
+        if "expected_recovery_value_paise" in ai_rec and "expectedRecoveryValuePaise" not in ai_rec:
+            ai_rec["expectedRecoveryValuePaise"] = ai_rec["expected_recovery_value_paise"]
+        if "supporting_factors" in ai_rec and "supportingFactors" not in ai_rec:
+            ai_rec["supportingFactors"] = ai_rec["supporting_factors"]
+        if "risk_factors" in ai_rec and "riskFactors" not in ai_rec:
+            ai_rec["riskFactors"] = ai_rec["risk_factors"]
+        item["ai_recommendation"] = ai_rec
+
+        # Format policy_decision
+        policy_dec = dict(item.get("policy_decision") or {})
+        if "rules_evaluated" in policy_dec and "rulesEvaluated" not in policy_dec:
+            policy_dec["rulesEvaluated"] = policy_dec["rules_evaluated"]
+        if "blocking_rule" in policy_dec and "blockingRule" not in policy_dec:
+            policy_dec["blockingRule"] = policy_dec["blocking_rule"]
+        if "blocking_reason" in policy_dec and "blockingReason" not in policy_dec:
+            policy_dec["blockingReason"] = policy_dec["blocking_reason"]
+        if "authorized_action" in policy_dec and "authorizedAction" not in policy_dec:
+            policy_dec["authorizedAction"] = policy_dec["authorized_action"]
+        item["policy_decision"] = policy_dec
+
+        # CamelCase top-level aliases
+        item["decisionId"] = item.get("decision_id")
+        item["paymentId"] = item.get("payment_id")
+        item["modelVersion"] = item.get("model_version")
+        item["requestId"] = item.get("request_id")
+        item["paymentSnapshot"] = item.get("payment_snapshot", {})
+        item["evidenceSummary"] = item.get("evidence_summary", {})
+        item["aiRecommendation"] = ai_rec
+        item["policyDecision"] = policy_dec
+        item["executionStatus"] = item.get("execution_status", "PENDING")
+        item["executionResult"] = item.get("execution_result")
+        item["executionLatencyMs"] = item.get("execution_latency_ms")
+        item["executedAt"] = item.get("executed_at")
+        item["outcomeActualPaise"] = item.get("outcome_actual_paise")
+        item["outcomeAt"] = item.get("outcome_at")
+        item["auditTimeline"] = item.get("audit_timeline", [])
+        item["createdAt"] = item.get("created_at")
+        item["updatedAt"] = item.get("updated_at")
+
+        return item
+
+    @classmethod
     def get_by_id(cls, decision_id: str) -> dict[str, Any] | None:
+        """Retrieve a single decision record by ID with formatted timestamps."""
         col = cls.get_collection()
         doc = col.find_one({"decision_id": decision_id}, {"_id": 0})
         if not doc:
             return None
-        res = dict(doc)
-        if isinstance(res.get("created_at"), datetime):
-            res["created_at"] = res["created_at"].isoformat()
-        return res
+        return cls._format_decision_doc(doc)
 
     @classmethod
-    def list_decisions(cls, page: int = 1, page_size: int = 50) -> tuple[list[dict[str, Any]], int]:
-        """Audit ledger listing with bounded pagination."""
+    def list_decisions(
+        cls,
+        page: int = 1,
+        page_size: int = 50,
+        payment_id: str | None = None,
+        action: str | None = None,
+        policy_status: str | None = None,
+        execution_status: str | None = None,
+        search: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Audit ledger listing with bounded pagination and robust filtering."""
         bounded_size = min(max(1, page_size), 100)
         skip = (max(1, page) - 1) * bounded_size
 
+        query: dict[str, Any] = {}
+        if payment_id:
+            query["payment_id"] = payment_id
+        if action and action.upper() != "ALL":
+            query["ai_recommendation.action"] = action.upper()
+        if policy_status and policy_status.upper() != "ALL":
+            query["policy_decision.status"] = policy_status.upper()
+        if execution_status and execution_status.upper() != "ALL":
+            query["execution_status"] = execution_status.upper()
+        if search:
+            s = str(search).strip()
+            query["$or"] = [
+                {"decision_id": {"$regex": s, "$options": "i"}},
+                {"payment_id": {"$regex": s, "$options": "i"}},
+            ]
+
         col = cls.get_collection()
         cursor = (
-            col.find({}, {"_id": 0})
+            col.find(query, {"_id": 0})
             .sort("created_at", -1)
             .skip(skip)
             .limit(bounded_size)
         )
-        total = col.count_documents({}) if hasattr(col, "count_documents") else len(list(col.find({})))
-        records = []
-        for d in cursor:
-            item = dict(d)
-            if isinstance(item.get("created_at"), datetime):
-                item["created_at"] = item["created_at"].isoformat()
-            records.append(item)
+        total = col.count_documents(query) if hasattr(col, "count_documents") else len(list(col.find(query)))
+        records = [cls._format_decision_doc(d) for d in cursor]
         return records, total
+
 
 
 class ActionRepository:

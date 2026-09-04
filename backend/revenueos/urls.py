@@ -4,7 +4,11 @@ from django.http import JsonResponse
 from django.urls import path
 
 from apps.authentication.views import login_view, logout_view, me_view, register_view
-from apps.razorpay_adapter.views import create_order_view, verify_payment_view
+from apps.razorpay_adapter.views import (
+    create_order_view,
+    record_payment_failure_view,
+    verify_payment_view,
+)
 from apps.webhooks.views import razorpay_webhook_view
 
 
@@ -70,4 +74,9 @@ urlpatterns = [
     path("api/razorpay/create-order/", create_order_view, name="rzp_create_order_slash"),
     path("api/razorpay/verify-payment", verify_payment_view, name="rzp_verify_payment"),
     path("api/razorpay/verify-payment/", verify_payment_view, name="rzp_verify_payment_slash"),
+    path("api/record-failure", record_payment_failure_view, name="record_failure"),
+    path("api/record-failure/", record_payment_failure_view, name="record_failure_slash"),
+    path("api/razorpay/record-failure", record_payment_failure_view, name="rzp_record_failure"),
+    path("api/razorpay/record-failure/", record_payment_failure_view, name="rzp_record_failure_slash"),
 ]
+

@@ -97,6 +97,7 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
         request_id = frame.get("requestId")
         msg_type = frame.get("type", "")
         payload = frame.get("payload") or {}
+        logger.info(f"Incoming WebSocket command '{msg_type}' request_id={request_id}")
 
         # 2. Rate Limiting Check
         is_sensitive = msg_type in ["recovery.analyze", "recovery.execute"]
@@ -115,25 +116,6 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             return
 
         # 3. Command Routing
-        try:
-            await self._dispatch_command(msg_type, payload, request_id)
-        except Exception as exc:
-            logger.exception(f"Unhandled error processing command '{msg_type}': {exc}")
-            await self.send(
-                text_data=build_error(
-                    "INTERNAL_ERROR",
-                    "An error occurred while processing your request.",
-                    request_id=request_id,
-                )
-            )
-
-    async def _dispatch_command(
-        self,
-        msg_type: str,
-        payload: dict[str, Any],
-        request_id: str | None,
-    ) -> None:
-        """Route validated command to appropriate application handler."""
         if msg_type == "ping":
             await self.send(
                 text_data=build_response(
@@ -143,6 +125,31 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                 )
             )
             return
+
+        import asyncio
+
+        async def _run_command() -> None:
+            try:
+                await self._dispatch_command(msg_type, payload, request_id)
+            except Exception as exc:
+                logger.exception(f"Unhandled error processing command '{msg_type}': {exc}")
+                await self.send(
+                    text_data=build_error(
+                        "INTERNAL_ERROR",
+                        "An error occurred while processing your request.",
+                        request_id=request_id,
+                    )
+                )
+
+        asyncio.create_task(_run_command())
+
+    async def _dispatch_command(
+        self,
+        msg_type: str,
+        payload: dict[str, Any],
+        request_id: str | None,
+    ) -> None:
+        """Route validated command to appropriate application handler."""
 
         if msg_type == "revenue.list":
             page = int(payload.get("page", 1))
@@ -358,6 +365,23 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             if isinstance(exec_outcome, dict):
                 exec_outcome["modelVersion"] = configured_model
 
+            # Update decision repository with execution state
+            try:
+                from apps.database.repositories import DecisionRepository
+
+                exec_status = exec_outcome.get("status", "EXECUTED")
+                exec_res = exec_outcome.get("result", {})
+
+                await sync_to_async(DecisionRepository.update_execution)(
+                    decision_id=decision_id,
+                    execution_status=exec_status,
+                    execution_result=exec_res,
+                    executed_at=datetime.now(UTC),
+                    outcome="PENDING" if exec_status == "EXECUTED" else "FAILED",
+                )
+            except Exception:
+                pass
+
             await self.send(
                 text_data=build_response(
                     "recovery.executed",
@@ -367,16 +391,30 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             )
             return
 
+
         if msg_type == "decision.list":
             page = int(payload.get("page", 1))
             page_size = int(payload.get("pageSize", 50))
+            search = payload.get("search")
+            action = payload.get("action")
+            policy_status = payload.get("policyStatus")
+            execution_status = payload.get("executionStatus")
+            payment_id = payload.get("paymentId")
 
             from asgiref.sync import sync_to_async
 
             from apps.database.repositories import DecisionRepository
 
             def fetch_decisions() -> dict[str, Any]:
-                records, total = DecisionRepository.list_decisions(page=page, page_size=page_size)
+                records, total = DecisionRepository.list_decisions(
+                    page=page,
+                    page_size=page_size,
+                    payment_id=payment_id,
+                    action=action,
+                    policy_status=policy_status,
+                    execution_status=execution_status,
+                    search=search,
+                )
                 return {
                     "decisions": records,
                     "total": total,
@@ -395,8 +433,10 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             )
             return
 
+
         if msg_type == "decision.explain":
             dec_arg = payload.get("decisionId")
+            logger.info(f"Processing decision.explain for decisionId='{dec_arg}' request_id={request_id}")
             if not dec_arg:
                 await self.send(
                     text_data=build_error("INVALID_ARGUMENT", "decisionId is required.", request_id)
@@ -415,13 +455,16 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
 
             decision_doc = await sync_to_async(get_explanation)()
             if not decision_doc:
+                logger.warning(f"Decision '{did}' not found for explain")
                 await self.send(
                     text_data=build_error("NOT_FOUND", f"Decision '{did}' not found.", request_id)
                 )
                 return
 
+            logger.info(f"Calling explain_decision_async for decision '{did}'")
             brain_svc = RecoveryBrainService()
             explanation_out = await brain_svc.explain_decision_async(decision_doc)
+            logger.info(f"explain_decision_async succeeded for decision '{did}'")
 
             await self.send(
                 text_data=build_response(
@@ -434,6 +477,7 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                     request_id=request_id,
                 )
             )
+            logger.info(f"Sent decision.explain.response for decision '{did}'")
             return
 
         if msg_type == "metrics.summary":

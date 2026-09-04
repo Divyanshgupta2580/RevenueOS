@@ -43,7 +43,13 @@ export interface RazorpayCheckoutOptions {
     verification: VerifyPaymentResponse;
   }) => void;
   onDismiss?: () => void;
-  onFailure?: (error: { code?: string; description?: string; reason?: string }) => void;
+  onFailure?: (error: {
+    code?: string;
+    description?: string;
+    reason?: string;
+    payment_id?: string;
+    order_id?: string;
+  }) => void;
 }
 
 export interface RazorpayFailureResponse {
@@ -52,7 +58,12 @@ export interface RazorpayFailureResponse {
   source?: string;
   step?: string;
   reason?: string;
+  metadata?: {
+    order_id?: string;
+    payment_id?: string;
+  };
 }
+
 
 declare global {
   interface Window {
@@ -200,8 +211,8 @@ export async function launchRazorpayCheckout(options: RazorpayCheckoutOptions): 
     order_id: order.order_id,
     prefill: {
       name: options.customerName || "RevenueOS Operator",
-      email: options.customerEmail || "operator@revenueos.local",
-      contact: options.customerContact || "9999999999",
+      email: options.customerEmail || "operator@revenueos.com",
+      contact: options.customerContact || "9820123456",
     },
     readonly: {
       contact: true,
@@ -253,16 +264,48 @@ export async function launchRazorpayCheckout(options: RazorpayCheckoutOptions): 
   const instance = new window.Razorpay(rzpOptions);
 
   // 4. Listen for payment failure events
-  instance.on("payment.failed", (response: { error?: RazorpayFailureResponse }) => {
+  instance.on("payment.failed", async (response: { error?: RazorpayFailureResponse }) => {
     const err = response.error || {};
+    const paymentId = err.metadata?.payment_id;
+    const orderId = err.metadata?.order_id || order.order_id;
+
+    // Report authentic failure to backend ingestion endpoint
+    if (paymentId) {
+      try {
+        const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
+        await fetch(`${apiOrigin}/api/record-failure`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            payment_id: paymentId,
+            order_id: orderId,
+            error_code: err.code,
+            error_description: err.description,
+            error_reason: err.reason,
+            error_source: err.source,
+            error_step: err.step,
+            amount: options.amountPaise,
+            currency: options.currency || "INR",
+            customer_email: options.customerEmail,
+          }),
+        });
+      } catch (ingestErr) {
+        console.warn("Could not ingest payment failure:", ingestErr);
+      }
+    }
+
     if (options.onFailure) {
       options.onFailure({
         code: err.code,
         description: err.description || "Payment processing failed.",
         reason: err.reason,
+        payment_id: paymentId,
+        order_id: orderId,
       });
     }
   });
+
 
   // 5. Open checkout modal
   instance.open();

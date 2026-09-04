@@ -214,11 +214,22 @@ Every AI recommendation passes through 8 deterministic policy checks before exec
 7. `RISK_POLICY`: Blocked on stolen cards, fraud, or blacklisted accounts.
 8. `DUPLICATE_EXECUTION`: In-flight idempotency guards prevent double executions.
 
-### D. Decision Ledger & AI Explainability
-- Immutable audit timeline recording:
-  - Timestamp, Decision ID, Payment ID, AI Recommendation, Model Version (`gemini-3.6-flash`), Confidence, Policy Result (`APPROVED` / `BLOCKED`), Reason / Rule.
-- Click any decision row to open the **Decision Audit Modal**.
-- **Deep Explain (Gemini 3.6 Flash)**: Calls `decision.explain` RPC to generate structured post-decision explanations breaking down factual evidence, policy alignment, and counterfactuals.
+### D. Decision Ledger & 8-Section Audit Proof Layer
+The Decision Ledger serves as the authoritative audit trail and proof layer for every recovery decision in RevenueOS:
+- **Sequential Timeline**: Chronological steps from Gateway Ingestion (T+0s) → AI Analysis (T+1.2s) → Policy Evaluation (T+1.4s) → Operator Execution (T+1.5s).
+- **Decision Traceability Bar**: Displays immutable Decision ID, Payment ID, AI Model (`gemini-3.6-flash`), Backend Endpoint (`ws://localhost:8000/ws/v1/app/`), and Request ID.
+- **8-Section Audit Inspection Modal**:
+  1. `PAYMENT`: Payment ID, Amount, Currency, Customer Email, Gateway Order ID, and Created Timestamp.
+  2. `VERIFIED FACTS`: Non-inferred gateway records (status, decline category, failure reason, method, retries).
+  3. `BACKEND CALCULATIONS`: Deterministic mathematical engine (Recoverability Score and ERV).
+  4. `AI RECOMMENDATION`: Gemini 3.6 Flash advisory action, confidence level, and model badge.
+  5. `AI REASONING`: Structured qualitative justification, supporting evidence, and risk factors.
+  6. `POLICY EVALUATION`: Guarded Autopilot verdict banner (APPROVED / BLOCKED) with all 8 evaluated rules.
+  7. `EXECUTION`: Idempotent dispatch timestamp, executor, channel, and idempotency key.
+  8. `OUTCOME`: Authoritative execution state, recovery status, and delivery confirmation.
+- **Deep Explain (Gemini 3.6 Flash)**: Calls `decision.explain` WebSocket RPC to generate structured post-decision explanations breaking down factual evidence, policy alignment, and counterfactuals.
+- **Search & Filter Controls**: Search by ID, filter by Action, Policy Status, and Execution Status with instant reset.
+- **Truthful Empty State**: Displays "NO RECOVERY DECISIONS YET" with honest empty guidance if no decisions exist.
 
 ### E. Outcome Metrics
 - Sourced exclusively from genuine MongoDB transactions:
@@ -240,7 +251,8 @@ Every AI recommendation passes through 8 deterministic policy checks before exec
   2. Frontend opens standard modal with `key_id`, `order_id`, and test customer data.
   3. Upon payment, frontend sends `razorpay_payment_id`, `razorpay_order_id`, and `razorpay_signature` to `POST /api/verify-payment`.
   4. Backend verifies HMAC-SHA256 signature using `RAZORPAY_KEY_SECRET` and records the transaction in MongoDB.
-  5. UI displays verified receipt details, copyable IDs, and `Make Another Payment` CTA.
+  5. Gateway declines are captured via `/api/record-failure` or webhooks and seamlessly fed into Revenue Radar.
+  6. UI displays verified receipt details, copyable IDs, and `Make Another Payment` CTA.
 
 ---
 
@@ -288,14 +300,14 @@ RevenueOS includes comprehensive automated test suites:
 
 ### Backend Tests (Pytest, Ruff, Mypy)
 ```bash
-# Run 121 comprehensive tests
+# Run 134 comprehensive tests
 backend/.venv/bin/pytest backend/tests/
 
 # Static analysis and linting
 backend/.venv/bin/ruff check backend/
 backend/.venv/bin/mypy --ignore-missing-imports backend/apps/
 ```
-- **121 / 121 Passed** in 2.6s.
+- **134 / 134 Passed** in 1.8s.
 - **0 Ruff errors**.
 - **0 Mypy issues** across 50 source files.
 
@@ -311,9 +323,9 @@ npm run build
 ### Playwright End-to-End Suite
 ```bash
 cd frontend
-npx playwright test
+npm run test:e2e
 ```
-- **10 / 10 Tests Passed** in 4.5s covering authentication, KPI cards, tab switching, truthful empty states, zero emojis, checkout UI, and WebSocket connectivity.
+- **15 / 15 Tests Passed** in 9.1s covering authentication, KPI cards, tab switching, truthful empty states, zero emojis, checkout UI, WebSocket connectivity, Opportunity Drawer AI Command Center, Guarded Autopilot policy gate, and the Decision Ledger 8-section audit proof layer.
 
 ---
 

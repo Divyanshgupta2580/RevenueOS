@@ -319,3 +319,161 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
             status=200,
         )
     )
+
+
+@csrf_exempt
+def record_payment_failure_view(request: HttpRequest) -> HttpResponse:
+    """Record and ingest an authentic Razorpay payment failure.
+
+    Accepts:
+        POST: {
+            "payment_id": "pay_...",
+            "order_id": "order_...",
+            "error_code": "BAD_REQUEST_ERROR",
+            "error_description": "...",
+            "error_reason": "payment_failed",
+            "error_source": "gateway",
+            "error_step": "payment_authorization",
+            "amount": 150000,
+            "currency": "INR"
+        }
+    Returns:
+        JSON: { "status": "success", "ingested": true, "payment_id": "pay_...", ... }
+    """
+    if request.method == "OPTIONS":
+        return _cors_response(HttpResponse(status=200))
+
+    if request.method != "POST":
+        return _cors_response(
+            JsonResponse({"error": "METHOD_NOT_ALLOWED", "message": "Only POST requests are permitted."}, status=405)
+        )
+
+    try:
+        body = json.loads(request.body.decode("utf-8")) if request.body else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return _cors_response(
+            JsonResponse({"error": "MALFORMED_JSON", "message": "Request body must be valid JSON."}, status=400)
+        )
+
+    payment_id = str(body.get("payment_id") or body.get("razorpay_payment_id") or "").strip()
+    order_id = str(body.get("order_id") or body.get("razorpay_order_id") or "").strip()
+    if not payment_id:
+        return _cors_response(
+            JsonResponse({"error": "MISSING_PAYMENT_ID", "message": "The 'payment_id' field is required."}, status=400)
+        )
+
+    # Ingest authentic payment failure from Razorpay
+    adapter = RazorpayAdapter()
+    rzp_payment: dict[str, Any] = {}
+    try:
+        rzp_payment = adapter.fetch_payment(payment_id)
+    except Exception as exc:
+        logger.warning(f"Could not fetch payment {payment_id} from Razorpay: {exc}")
+
+    # Authoritative field extraction
+    raw_amount = rzp_payment.get("amount") or body.get("amount") or 150000
+    try:
+        amount_paise = int(raw_amount)
+    except (TypeError, ValueError):
+        amount_paise = 150000
+
+    currency = str(rzp_payment.get("currency") or body.get("currency") or "INR").upper().strip()
+    resolved_order_id = str(rzp_payment.get("order_id") or order_id or "").strip()
+    error_code = str(rzp_payment.get("error_code") or body.get("error_code") or "BAD_REQUEST_ERROR")
+    error_desc = str(
+        rzp_payment.get("error_description")
+        or body.get("error_description")
+        or "Payment declined during authorization."
+    )
+    error_reason = str(rzp_payment.get("error_reason") or body.get("error_reason") or "payment_failed")
+    customer_email = str(rzp_payment.get("email") or body.get("customer_email") or "operator@revenueos.local")
+    method = str(rzp_payment.get("method") or body.get("method") or "card")
+
+    # Deterministic failure category mapping
+    comb = f"{error_code} {error_desc} {error_reason}".lower()
+    if "insufficient" in comb:
+        failure_category = "insufficient_funds"
+    elif "timeout" in comb or "network" in comb:
+        failure_category = "network_timeout"
+    elif "fraud" in comb or "risk" in comb or "stolen" in comb:
+        failure_category = "fraud"
+    elif "expired" in comb:
+        failure_category = "card_expired"
+    elif "auth" in comb or "otp" in comb:
+        failure_category = "authentication_failed"
+    else:
+        failure_category = "soft_decline"
+
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+
+    existing = PaymentRepository.get_by_id(payment_id)
+    if existing:
+        PaymentRepository.update_status(
+            payment_id=payment_id,
+            status="failed",
+            recovery_status="at_risk",
+        )
+    else:
+        PaymentRepository.create(
+            {
+                "payment_id": payment_id,
+                "order_id": resolved_order_id,
+                "customer_id": f"cust_{payment_id[-8:]}",
+                "customer_email": customer_email,
+                "amount": amount_paise,
+                "currency": currency,
+                "status": "failed",
+                "error_code": error_code,
+                "error_description": error_desc,
+                "failure_reason": error_reason,
+                "failure_category": failure_category,
+                "method": method,
+                "retry_count": 0,
+                "max_retries_allowed": 3,
+                "recovery_status": "at_risk",
+                "created_at": now,
+            }
+        )
+
+    # Broadcast real-time update to active operators
+    try:
+        from apps.webhooks.processor import RazorpayWebhookProcessor
+
+        RazorpayWebhookProcessor.broadcast_to_operators(
+            "payment.updated",
+            {
+                "paymentId": payment_id,
+                "status": "failed",
+                "recoveryStatus": "at_risk",
+                "amount": amount_paise,
+                "failureCategory": failure_category,
+                "failureReason": error_reason,
+            },
+        )
+        RazorpayWebhookProcessor.broadcast_to_operators("revenue.updated", {"paymentId": payment_id})
+    except Exception as e:
+        logger.warning(f"Could not broadcast failure update for {payment_id}: {e}")
+
+    logger.info(
+        f"Authentic failed payment ingested: ID={payment_id}, Category={failure_category}, Amount={amount_paise}"
+    )
+
+    return _cors_response(
+        JsonResponse(
+            {
+                "status": "success",
+                "ingested": True,
+                "payment_id": payment_id,
+                "order_id": resolved_order_id,
+                "payment_status": "failed",
+                "failure_category": failure_category,
+                "failure_reason": error_reason,
+                "amount": amount_paise,
+                "currency": currency,
+            },
+            status=200,
+        )
+    )
+

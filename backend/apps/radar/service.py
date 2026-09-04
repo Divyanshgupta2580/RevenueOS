@@ -83,9 +83,10 @@ class RevenueRadarService:
         else:
             customer_masked = "Anonymous"
 
-        # Payment age
         created_at_raw = payment.get("created_at")
         if isinstance(created_at_raw, datetime):
+            if created_at_raw.tzinfo is None:
+                created_at_raw = created_at_raw.replace(tzinfo=UTC)
             age_sec = max(0, int((now - created_at_raw).total_seconds()))
         else:
             age_sec = 0

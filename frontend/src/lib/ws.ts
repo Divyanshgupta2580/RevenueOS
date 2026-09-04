@@ -44,7 +44,7 @@ export class RevenueWebSocketClient {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
   private readonly PING_INTERVAL_MS = 25000;
-  private readonly PONG_TIMEOUT_MS = 5000;
+  private readonly PONG_TIMEOUT_MS = 15000;
 
   // Reconnection state
   private reconnectAttempt = 0;
@@ -285,13 +285,12 @@ export class RevenueWebSocketClient {
       };
       this.ws.send(JSON.stringify(pingMessage));
 
-      // Wait 5 seconds for pong; if missing, mark stale and reconnect
+      // Wait for pong; if missing, log warning without aborting active socket
       this.heartbeatTimeout = setTimeout(() => {
-        console.warn("Heartbeat pong missing after 5s. Connection marked STALE.");
-        this.setState("STALE");
-        if (this.ws) {
-          this.ws.close(4408, "Ping timeout");
+        if (this.pendingRequests.size > 0) {
+          return;
         }
+        console.warn("Heartbeat pong delayed; keeping socket open for active RPC session.");
       }, this.PONG_TIMEOUT_MS);
     }, this.PING_INTERVAL_MS);
   }

@@ -161,6 +161,7 @@ export interface BrainRecommendation {
   action: "RETRY" | "PAYMENT_LINK" | "REMINDER" | "STOP";
   confidence: number;
   expectedRecoveryValuePaise: number;
+  expected_recovery_value_paise?: number;
   reason: string;
   supportingFactors: string[];
   riskFactors: string[];
@@ -183,13 +184,99 @@ export interface PolicyVerdict {
   evaluatedAt: string;
 }
 
+export interface AuditTimelineItem {
+  stage: string;
+  title: string;
+  status: string;
+  timestamp: string;
+  details?: Record<string, unknown>;
+}
+
 export interface DecisionRecord {
   decisionId: string;
   paymentId: string;
   modelVersion: string;
+  endpoint?: string;
+  requestId?: string;
+  paymentSnapshot?: {
+    paymentId?: string;
+    orderId?: string;
+    customerId?: string;
+    customerEmail?: string;
+    amount?: number;
+    currency?: string;
+    status?: string;
+    failureCategory?: string;
+    failureReason?: string;
+    method?: string;
+    retryCount?: number;
+    maxRetriesAllowed?: number;
+    createdAt?: string;
+  };
+  evidenceSummary?: {
+    verifiedFacts?: {
+      status?: string;
+      amount?: string | number;
+      currency?: string;
+      failureCategory?: string;
+      failureReason?: string;
+      paymentMethod?: string;
+      captured?: boolean;
+    };
+    backendCalculations?: {
+      recoverabilityScore?: number;
+      expectedRecoveryPaise?: number;
+      formattedERV?: string;
+      estimatedProbability?: number;
+      paymentAge?: string;
+    };
+    historicalEvidence?: {
+      customerId?: string;
+      customerSuccessfulPayments?: number;
+      customerFailedPayments?: number;
+      recoveryAttempts?: number;
+    };
+    policyConstraints?: {
+      maxRetries?: number;
+      cooldownSeconds?: number;
+      allowedActions?: string[];
+      maxAmountPaise?: number;
+    };
+    systemState?: {
+      isTestMode?: boolean;
+      duplicateProtectionActive?: boolean;
+      paymentLinkApiAvailable?: boolean;
+      simulatedRetryAvailable?: boolean;
+    };
+  };
   aiRecommendation: BrainRecommendation;
   policyDecision: PolicyVerdict;
+  executionStatus?: "PENDING" | "EXECUTED" | "BLOCKED" | "FAILED" | string;
+  executionResult?: Record<string, unknown> | null;
+  executionLatencyMs?: number | null;
+  executedAt?: string | null;
+  outcome?: "PENDING" | "RECOVERED" | "FAILED" | "BLOCKED_BY_POLICY" | string;
+  outcomeActualPaise?: number | null;
+  outcomeAt?: string | null;
+  auditTimeline?: AuditTimelineItem[];
   createdAt: string;
+  updatedAt?: string;
+  decision_id?: string;
+  payment_id?: string;
+  model_version?: string;
+  request_id?: string;
+  payment_snapshot?: Record<string, unknown>;
+  evidence_summary?: Record<string, unknown>;
+  ai_recommendation?: BrainRecommendation;
+  policy_decision?: PolicyVerdict;
+  execution_status?: string;
+  execution_result?: Record<string, unknown> | null;
+  execution_latency_ms?: number | null;
+  executed_at?: string | null;
+  outcome_actual_paise?: number | null;
+  outcome_at?: string | null;
+  audit_timeline?: AuditTimelineItem[];
+  created_at?: string;
 }
 
 export interface ExplanationData {
@@ -197,11 +284,12 @@ export interface ExplanationData {
   explanation?: string;
   key_factors?: string[];
   policy_alignment?: string;
+  counterfactual?: string;
+  counterfactuals?: string[];
   outcome_assessment?: string;
   latency_ms?: number;
   summary?: string;
   decisionFactors?: string[];
-  counterfactuals?: string[];
   policyAlignment?: string;
   confidenceAssessment?: string;
 }

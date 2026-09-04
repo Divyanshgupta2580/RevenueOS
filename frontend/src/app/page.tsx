@@ -14,6 +14,7 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import type {
   BrainRecommendation,
   DecisionRecord,
+  ExplanationData,
   MetricSummary,
   Opportunity,
   PolicyVerdict,
@@ -161,18 +162,19 @@ export default function CommandCenterPage() {
   };
 
   // 6b. Gemini 3.6 Flash Decision Explanation
-  const handleExplainDecision = async (decisionId: string) => {
+  const handleExplainDecision = async (decisionId: string): Promise<ExplanationData | null> => {
     try {
       const resp = await request<
         { decisionId: string },
-        { explanation?: { summary?: string; decisionFactors?: string[]; counterfactuals?: string[]; policyAlignment?: string; confidenceAssessment?: string } }
+        { explanation?: ExplanationData }
       >(
         "decision.explain",
         { decisionId },
-        12000
+        45000
       );
       return resp.payload?.explanation || null;
-    } catch {
+    } catch (err) {
+      console.error("[WebSocket] handleExplainDecision error:", err);
       return null;
     }
   };
@@ -348,6 +350,7 @@ export default function CommandCenterPage() {
                 decisions={decisions}
                 loading={loadingDecisions}
                 onExplain={handleExplainDecision}
+                onRefresh={refreshData}
               />
             )}
 

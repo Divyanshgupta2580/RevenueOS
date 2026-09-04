@@ -124,22 +124,72 @@ class WebhookEventProcessor:
         # Handle Payment Failed
         elif event_type == "payment.failed":
             if payment_id:
-                error_code = payment_entity.get("error_code", "unknown")
-                error_desc = payment_entity.get("error_description", "")
-                PaymentRepository.update_status(
-                    payment_id=payment_id,
-                    status="failed",
-                    recovery_status="pending",
-                )
+                error_code = str(payment_entity.get("error_code") or "BAD_REQUEST_ERROR")
+                error_desc = str(payment_entity.get("error_description") or "Payment failed")
+                error_reason = str(payment_entity.get("error_reason") or "payment_failed")
+                comb = f"{error_code} {error_desc} {error_reason}".lower()
+                if "insufficient" in comb:
+                    category = "insufficient_funds"
+                elif "timeout" in comb or "network" in comb:
+                    category = "network_timeout"
+                elif "fraud" in comb or "risk" in comb or "stolen" in comb:
+                    category = "fraud"
+                elif "expired" in comb:
+                    category = "card_expired"
+                elif "auth" in comb or "otp" in comb:
+                    category = "authentication_failed"
+                else:
+                    category = "soft_decline"
+
+                payment = PaymentRepository.get_by_id(payment_id)
+                if payment:
+                    PaymentRepository.update_status(
+                        payment_id=payment_id,
+                        status="failed",
+                        recovery_status="at_risk",
+                    )
+                else:
+                    raw_amt = payment_entity.get("amount") or 150000
+                    try:
+                        amount_paise = int(raw_amt)
+                    except (TypeError, ValueError):
+                        amount_paise = 150000
+                    currency = str(payment_entity.get("currency") or "INR")
+                    order_id = str(payment_entity.get("order_id") or "")
+                    email = str(payment_entity.get("email") or "operator@revenueos.local")
+                    PaymentRepository.create(
+                        {
+                            "payment_id": payment_id,
+                            "order_id": order_id,
+                            "customer_id": f"cust_{payment_id[-8:]}",
+                            "customer_email": email,
+                            "amount": amount_paise,
+                            "currency": currency,
+                            "status": "failed",
+                            "error_code": error_code,
+                            "error_description": error_desc,
+                            "failure_reason": error_reason,
+                            "failure_category": category,
+                            "method": str(payment_entity.get("method") or "card"),
+                            "retry_count": 0,
+                            "max_retries_allowed": 3,
+                            "recovery_status": "at_risk",
+                            "created_at": now,
+                        }
+                    )
+
                 cls.broadcast_to_operators(
                     "payment.updated",
                     {
                         "paymentId": payment_id,
                         "status": "failed",
+                        "recoveryStatus": "at_risk",
                         "errorCode": error_code,
                         "errorDescription": error_desc,
+                        "failureCategory": category,
                     },
                 )
+                cls.broadcast_to_operators("revenue.updated", {"paymentId": payment_id})
 
         # Handle Payment Link Expired or Cancelled
         elif event_type in ["payment_link.expired", "payment_link.cancelled"]:
@@ -155,3 +205,8 @@ class WebhookEventProcessor:
                 )
 
         return {"status": "PROCESSED", "eventId": event_id, "type": event_type}
+
+
+# Backward-compatible and descriptive alias
+RazorpayWebhookProcessor = WebhookEventProcessor
+

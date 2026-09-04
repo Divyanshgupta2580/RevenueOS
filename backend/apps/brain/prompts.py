@@ -224,4 +224,6 @@ decision_id: string
 explanation: clear human-readable narrative explanation
 key_factors: list of primary deciding factors
 policy_alignment: explanation of how policy rules governed the outcome
+counterfactual: hypothetical conditions under which this decision or verdict would change
 """
+
