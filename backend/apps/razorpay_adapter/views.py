@@ -24,7 +24,7 @@ def _cors_response(response: HttpResponse) -> HttpResponse:
     """Attach permissive CORS headers for local and cross-origin frontend clients."""
     origin = getattr(settings, "FRONTEND_ORIGIN", "*") or "*"
     response["Access-Control-Allow-Origin"] = origin if origin != "*" else "*"
-    response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
     response["Access-Control-Allow-Credentials"] = "true"
     return response
@@ -124,6 +124,7 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
     """Verify HMAC-SHA256 signature for Razorpay Standard Web Checkout.
 
     Accepts:
+        GET: Returns the most recent verified captured payment
         POST: {
             "razorpay_order_id": "...",
             "razorpay_payment_id": "...",
@@ -133,9 +134,42 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
     if request.method == "OPTIONS":
         return _cors_response(HttpResponse(status=200))
 
+    if request.method == "GET":
+        try:
+            col = PaymentRepository.get_collection()
+            latest = col.find_one({"status": {"$in": ["captured", "paid"]}}, sort=[("created_at", -1)])
+            if latest:
+                created_val = latest.get("created_at")
+                created_str = (
+                    created_val.isoformat()
+                    if hasattr(created_val, "isoformat")
+                    else str(created_val or "")
+                )
+                return _cors_response(
+                    JsonResponse(
+                        {
+                            "status": "success",
+                            "payment": {
+                                "payment_id": latest.get("payment_id", ""),
+                                "order_id": latest.get("order_id", ""),
+                                "amount": latest.get("amount", 0),
+                                "currency": latest.get("currency", "INR"),
+                                "status": latest.get("status", "captured"),
+                                "signature": latest.get("signature") or "",
+                                "created_at": created_str,
+                            },
+                        },
+                        status=200,
+                    )
+                )
+            return _cors_response(JsonResponse({"status": "empty", "payment": None}, status=200))
+        except Exception as e:
+            logger.warning(f"Could not fetch latest verified payment: {e}")
+            return _cors_response(JsonResponse({"status": "empty", "payment": None}, status=200))
+
     if request.method != "POST":
         return _cors_response(
-            JsonResponse({"error": "METHOD_NOT_ALLOWED", "message": "Only POST requests are permitted."}, status=405)
+            JsonResponse({"error": "METHOD_NOT_ALLOWED", "message": "Only GET and POST requests are permitted."}, status=405)
         )
 
     try:
@@ -193,7 +227,7 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
     except RazorpayAuthError as exc:
         logger.error(f"Razorpay authentication error during signature verification: {exc}")
         return _cors_response(
-            JsonResponse({"error": "AUTH_FAILURE", "message": "Razorpay KEY_SECRET is not configured."}, status=401)
+            JsonResponse({"error": "AUTH_FAILURE", "message": "Razorpay gateway secret is not configured."}, status=401)
         )
     except Exception as exc:
         logger.error(f"Unexpected error verifying signature: {exc}")
@@ -216,7 +250,7 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
 
     logger.info(f"Payment verified successfully for order {order_id} and payment {payment_id}")
 
-    # Mark as recovered/captured in database if matching payment exists
+    # Mark as recovered/captured in database or persist new verified checkout payment
     associated_payment_id = body.get("payment_reference") or payment_id
     try:
         matched_payment = PaymentRepository.get_by_id(associated_payment_id)
@@ -225,8 +259,39 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
                 payment_id=associated_payment_id,
                 status="captured",
                 recovery_status="recovered",
+                signature=signature,
             )
-            import uuid
+        else:
+            # Standalone checkout payment: fetch details from Razorpay or use request body
+            amount_paise = 10000
+            currency = "INR"
+            customer_email = "operator@revenueos.local"
+            try:
+                rzp_payment = adapter.fetch_payment(payment_id)
+                if isinstance(rzp_payment, dict) and "amount" in rzp_payment:
+                    amount_paise = int(rzp_payment["amount"])
+                    currency = rzp_payment.get("currency", "INR")
+                    customer_email = rzp_payment.get("email") or customer_email
+            except Exception as e:
+                logger.warning(f"Could not fetch payment from Razorpay: {e}")
+
+            try:
+                PaymentRepository.create({
+                    "payment_id": payment_id,
+                    "order_id": order_id,
+                    "customer_id": f"cust_{payment_id[-8:]}",
+                    "customer_email": customer_email,
+                    "amount": amount_paise,
+                    "currency": currency,
+                    "status": "captured",
+                    "recovery_status": "recovered",
+                    "signature": signature,
+                })
+            except Exception as e:
+                logger.info(f"Payment already exists or could not be inserted: {e}")
+
+        import uuid
+        try:
             ActionRepository.create({
                 "action_id": f"act_chk_{uuid.uuid4().hex[:10]}",
                 "action_type": "CHECKOUT_PAYMENT_VERIFIED",
@@ -237,8 +302,10 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
                 "payload": {"order_id": order_id, "payment_id": payment_id},
                 "result": {"verified": True},
             })
+        except Exception as e:
+            logger.info(f"Action already recorded: {e}")
     except Exception as exc:
-        logger.warning(f"Could not update payment state for {associated_payment_id}: {exc}")
+        logger.warning(f"Could not update/persist payment state for {associated_payment_id}: {exc}")
 
     return _cors_response(
         JsonResponse(

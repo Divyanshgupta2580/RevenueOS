@@ -201,7 +201,12 @@ export async function launchRazorpayCheckout(options: RazorpayCheckoutOptions): 
     prefill: {
       name: options.customerName || "RevenueOS Operator",
       email: options.customerEmail || "operator@revenueos.local",
-      contact: options.customerContact || "9876543210",
+      contact: options.customerContact || "9999999999",
+    },
+    readonly: {
+      contact: true,
+      email: true,
+      name: true,
     },
     theme: {
       color: "#f59e0b", // RevenueOS Amber

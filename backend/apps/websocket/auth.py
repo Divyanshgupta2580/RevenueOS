@@ -1,12 +1,28 @@
 """WebSocket authentication middleware for Django Channels."""
 
 from typing import Any
+from urllib.parse import parse_qs
+
+from channels.db import database_sync_to_async
 
 from apps.authentication.services import validate_session
 
 
+@database_sync_to_async
+def _get_user_from_token(token: str) -> dict[str, Any] | None:
+    """Synchronously validate session in MongoDB and return sanitized user dict."""
+    session = validate_session(token)
+    if session:
+        return {
+            "id": str(session.get("user_id")),
+            "username": session.get("username"),
+            "role": session.get("role", "operator"),
+        }
+    return None
+
+
 class WebSocketAuthMiddleware:
-    """Extracts session cookie and authenticates WebSocket connections."""
+    """Extracts session credentials and authenticates WebSocket connections."""
 
     def __init__(self, inner: Any) -> None:
         self.inner = inner
@@ -15,25 +31,35 @@ class WebSocketAuthMiddleware:
         # Default unauthenticated user in scope
         scope["user"] = None
 
-        headers = dict(scope.get("headers", []))
-        cookie_header = headers.get(b"cookie", b"").decode("utf-8")
-
         session_token = None
-        if cookie_header:
-            cookies = [c.strip() for c in cookie_header.split(";")]
-            for c in cookies:
-                if c.startswith("revenueos_session="):
-                    session_token = c.split("=", 1)[1]
-                    break
 
+        # 1. Check pre-parsed cookies in scope if available
+        if "cookies" in scope and isinstance(scope["cookies"], dict):
+            session_token = scope["cookies"].get("revenueos_session")
+
+        # 2. Check raw cookie header if not found
+        if not session_token:
+            headers = dict(scope.get("headers", []))
+            cookie_header = headers.get(b"cookie", b"").decode("utf-8", errors="ignore")
+            if cookie_header:
+                cookies = [c.strip() for c in cookie_header.split(";")]
+                for c in cookies:
+                    if c.startswith("revenueos_session="):
+                        session_token = c.split("=", 1)[1]
+                        break
+
+        # 3. Check query parameter fallback (?token=... or ?session_token=...)
+        if not session_token and scope.get("query_string"):
+            qs = parse_qs(scope["query_string"].decode("utf-8", errors="ignore"))
+            token_params = qs.get("token") or qs.get("session_token")
+            if token_params:
+                session_token = token_params[0]
+
+        # Validate token via async wrapper
         if session_token:
-            session = validate_session(session_token)
-            if session:
-                scope["user"] = {
-                    "id": session.get("user_id"),
-                    "username": session.get("username"),
-                    "role": session.get("role", "operator"),
-                }
+            user_data = await _get_user_from_token(session_token)
+            if user_data:
+                scope["user"] = user_data
 
         return await self.inner(scope, receive, send)
 

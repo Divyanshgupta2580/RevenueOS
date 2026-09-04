@@ -7,7 +7,7 @@ structured Pydantic outputs, and fail-safe deterministic fallbacks.
 import json
 import logging
 import time
-from typing import ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 from google import genai
 from google.genai import types
@@ -18,7 +18,11 @@ from apps.brain.config import (
     get_configured_gemini_model,
 )
 from apps.brain.prompts import SYSTEM_INSTRUCTION, build_analysis_prompt
-from apps.brain.schemas import RecoveryBrainInput, RecoveryBrainOutput
+from apps.brain.schemas import (
+    DecisionExplanationOutput,
+    RecoveryBrainInput,
+    RecoveryBrainOutput,
+)
 from apps.brain.tracker import usage_tracker
 from apps.radar.scoring import compute_opportunity_erv, get_optimal_heuristic_action
 
@@ -63,8 +67,22 @@ class GeminiProvider:
             response_mime_type="application/json",
             response_schema=RecoveryBrainOutput,
             temperature=0.1,  # Low temperature for deterministic financial decision support
-            max_output_tokens=400,  # Compact output budget for structured financial decisions
+            max_output_tokens=1500,  # Generous token budget for complete structured Pydantic schema
         )
+
+    @staticmethod
+    def _clean_json_text(raw_text: str | None) -> str:
+        """Strip markdown code fence blocks and extra whitespace from model response."""
+        if not raw_text:
+            return "{}"
+        text = raw_text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        return text.strip()
 
     async def generate_recommendation_async(
         self, input_ctx: RecoveryBrainInput
@@ -87,7 +105,7 @@ class GeminiProvider:
             )
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
 
-            text = response.text or "{}"
+            text = self._clean_json_text(response.text)
             raw_data = json.loads(text)
 
             # Strict Pydantic validation
@@ -152,7 +170,7 @@ class GeminiProvider:
             )
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
 
-            text = response.text or "{}"
+            text = self._clean_json_text(response.text)
             raw_data = json.loads(text)
 
             # Strict Pydantic validation
@@ -258,4 +276,70 @@ class GeminiProvider:
             risk_factors=risks,
             stop_rationale=stop_rationale,
             is_fallback=True,
+        )
+
+    async def explain_decision_async(
+        self, decision: dict[str, Any]
+    ) -> DecisionExplanationOutput:
+        """Generate structured explanation of an audit decision via Gemini or deterministic fallback."""
+        from apps.brain.prompts import EXPLANATION_SYSTEM_INSTRUCTION, build_explanation_prompt
+        from apps.brain.schemas import DecisionExplanationOutput
+
+        did = str(decision.get("decision_id", "unknown"))
+        client = self._get_client()
+
+        if not client:
+            return self.get_safe_explanation_fallback(decision)
+
+        prompt = build_explanation_prompt(decision)
+        config = types.GenerateContentConfig(
+            system_instruction=EXPLANATION_SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=DecisionExplanationOutput,
+            temperature=0.1,
+            max_output_tokens=1500,
+        )
+
+        t_start = time.perf_counter()
+        try:
+            response = await client.aio.models.generate_content(
+                model=str(self.model_name),
+                contents=prompt,
+                config=config,
+            )
+            elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
+            text = self._clean_json_text(response.text)
+            raw_data = json.loads(text)
+            output = DecisionExplanationOutput(**raw_data)
+            output.latency_ms = elapsed_ms
+            return output
+        except Exception as exc:
+            logger.warning("Error generating AI explanation for decision %s: %s", did, exc)
+            return self.get_safe_explanation_fallback(decision)
+
+    @staticmethod
+    def get_safe_explanation_fallback(decision: dict[str, Any]) -> DecisionExplanationOutput:
+        """Deterministic fallback explanation for audit ledger decisions."""
+        from apps.brain.schemas import DecisionExplanationOutput
+
+        did = str(decision.get("decision_id", "unknown"))
+        policy_dec = decision.get("policy_decision", {})
+        status = policy_dec.get("status", "EVALUATED")
+        blocking_reason = policy_dec.get("blocking_reason")
+        auth_action = policy_dec.get("authorized_action")
+
+        if status == "BLOCKED":
+            exp = f"Decision was BLOCKED by Guarded Autopilot policy. Rule violated: {blocking_reason or 'Risk policy constraint'}."
+            factors = [blocking_reason or "Policy restriction", "Protected against unnecessary retry overhead"]
+        else:
+            exp = f"Decision was APPROVED by Guarded Autopilot policy for action '{auth_action or 'AUTHORIZED'}'. All pre-execution checks passed."
+            factors = ["Action within merchant limits", "No active cooldowns", "Eligible payment state"]
+
+        return DecisionExplanationOutput(
+            decision_id=did,
+            explanation=exp,
+            key_factors=factors,
+            policy_alignment="Verified against deterministic policy engine rules.",
+            outcome_assessment="Deterministic evaluation without external API dependency.",
+            latency_ms=0.01,
         )

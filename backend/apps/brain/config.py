@@ -11,16 +11,33 @@ from django.conf import settings
 logger = logging.getLogger("revenueos.brain")
 
 
-def get_configured_gemini_model() -> str:
-    """Return the single authoritative Gemini model identifier configured in settings.
+# Application Governance: Only the approved model may execute
+APPROVED_GEMINI_MODEL: str = "gemini-3.6-flash"
+REQUIRED_GEMINI_MODEL: str = APPROVED_GEMINI_MODEL
 
-    Guarantees that runtime components do not hardcode model names and that
-    updating GEMINI_MODEL in the environment immediately propagates across the application.
+
+def get_configured_gemini_model() -> str:
+    """Return the authoritative Gemini model identifier configured in settings.
+
+    Architecture:
+    - Environment: GEMINI_MODEL selects the requested runtime model.
+    - Application Governance: APPROVED_GEMINI_MODEL validates that only the
+      approved model (gemini-3.6-flash) may execute.
+
+    Fails safely and explicitly if missing, empty, or unapproved.
     """
     model = getattr(settings, "GEMINI_MODEL", None)
-    if not model or not str(model).strip():
-        raise ValueError("GEMINI_MODEL is not configured in settings or environment.")
-    return str(model).strip()
+    if model is None:
+        raise ValueError("GEMINI_MODEL is missing from configuration.")
+    model_str = str(model).strip()
+    if not model_str:
+        raise ValueError("GEMINI_MODEL is empty in configuration.")
+    if model_str != APPROVED_GEMINI_MODEL:
+        raise ValueError(
+            f"Unauthorized GEMINI_MODEL '{model_str}'. "
+            f"RevenueOS strictly requires approved model '{APPROVED_GEMINI_MODEL}'."
+        )
+    return model_str
 
 
 def get_configured_gemini_api_key() -> str:

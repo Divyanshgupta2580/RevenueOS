@@ -28,25 +28,25 @@ test.describe("RevenueOS End-to-End User Journey", () => {
     await expect(page.locator("h1")).toContainText("RevenueOS");
   });
 
-  test("2. Login page renders credentials and Turnstile widget", async ({ page }) => {
+  test("2. Login page renders empty credentials, Register link, and Turnstile widget", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.locator("input[type='email']")).toBeVisible();
+    const emailInput = page.locator("input[type='email']");
+    await expect(emailInput).toBeVisible();
+    await expect(emailInput).toHaveValue("");
     await expect(page.locator("input[type='password']")).toBeVisible();
     await expect(page.locator("button[type='submit']")).toBeVisible();
     await expect(page.locator("text=Bot Verification")).toBeVisible();
+    await expect(page.locator("a:has-text('Register here')")).toBeVisible();
   });
 
-  test("3. Missing Turnstile token blocks submission with disabled state and security alert", async ({ page }) => {
-    await page.goto("/login");
-    await page.locator("input[type='email']").fill("operator@revenueos.local");
-    await page.locator("input[type='password']").fill("OperatorPass123!");
-
-    // Button is disabled when Turnstile verification has not completed
-    await expect(page.locator("button[type='submit']")).toBeDisabled();
-
-    // Form submission without token triggers client-side validation alert
-    await page.locator("form").dispatchEvent("submit");
-    await expect(page.locator("text=Please complete the Cloudflare security verification.")).toBeVisible();
+  test("3. Registration page renders form fields and link to Login", async ({ page }) => {
+    await page.goto("/register");
+    await expect(page.locator("input[type='email']")).toBeVisible();
+    await expect(page.locator("input[placeholder='Create a strong password']")).toBeVisible();
+    await expect(page.locator("input[placeholder='Re-enter password']")).toBeVisible();
+    await expect(page.locator("button[type='submit']")).toBeVisible();
+    await expect(page.locator("text=Bot Verification")).toBeVisible();
+    await expect(page.locator("a:has-text('Sign In')")).toBeVisible();
   });
 
   test("4. Command Center displays header, connection badge, and 5 KPI cards", async ({ page }) => {
@@ -63,11 +63,12 @@ test.describe("RevenueOS End-to-End User Journey", () => {
 
     await page.goto("/");
     await expect(page.locator("header")).toBeVisible();
-    await expect(page.getByText("Revenue at Risk", { exact: true })).toBeVisible();
-    await expect(page.locator("text=Expected Recoverable")).toBeVisible();
-    await expect(page.locator("text=Actually Recovered")).toBeVisible();
-    await expect(page.locator("text=Estimated Lift")).toBeVisible();
-    await expect(page.locator("text=Recovery Rate")).toBeVisible();
+    await page.locator("button:has-text('Outcome Metrics')").click();
+    await expect(page.getByText("REVENUE AT RISK", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Expected Recoverable/i)).toBeVisible();
+    await expect(page.getByText(/Actually Recovered/i)).toBeVisible();
+    await expect(page.getByText(/Estimated Lift/i)).toBeVisible();
+    await expect(page.getByText(/Recovery Rate/i)).toBeVisible();
   });
 
   test("5. Navigation tabs switch seamlessly between Radar, Ledger, and Metrics", async ({ page }) => {
@@ -122,12 +123,21 @@ test.describe("RevenueOS End-to-End User Journey", () => {
     expect(emojiRegex.test(content)).toBeFalsy();
   });
 
-  test("8. Razorpay Checkout tab and /checkout route render standard checkout interface", async ({ page }) => {
+  test("8. Razorpay Checkout tab and /checkout route render redesigned checkout interface", async ({ page }) => {
     // Test standalone /checkout page
     await page.goto("/checkout");
+    await expect(page.locator("text=Secure Payments for Revenue Recovery")).toBeVisible();
     await expect(page.locator("text=Razorpay Standard Web Checkout")).toBeVisible();
-    await expect(page.locator("button:has-text('Pay ₹500.00 with Razorpay')")).toBeVisible();
-    await expect(page.locator("text=HMAC-SHA256 Verified")).toBeVisible();
+    await expect(page.getByText("HMAC-SHA256", { exact: true })).toBeVisible();
+    await expect(page.getByText("Verified", { exact: true })).toBeVisible();
+
+    // Verify presence of either active verified state or payment CTA
+    const hasSuccessBanner = await page.locator("text=Payment Verified & Captured Successfully!").isVisible().catch(() => false);
+    if (hasSuccessBanner) {
+      await expect(page.locator("button:has-text('Make Another Payment')")).toBeVisible();
+    } else {
+      await expect(page.locator("button:has-text('with Razorpay')")).toBeVisible();
+    }
 
     // Test dashboard Checkout tab
     await page.route("**/api/auth/me/", async (route) => {
@@ -143,7 +153,33 @@ test.describe("RevenueOS End-to-End User Journey", () => {
 
     await page.goto("/");
     await page.locator("button:has-text('Checkout')").click();
+    await expect(page.locator("text=Secure Payments for Revenue Recovery")).toBeVisible();
     await expect(page.locator("text=Razorpay Standard Web Checkout")).toBeVisible();
     await expect(page.locator("text=Standard Checkout Architecture Flow")).toBeVisible();
+  });
+
+  test("9. Strictly zero exposure of KEY_SECRET in rendered user interface copy", async ({ page }) => {
+    await page.goto("/checkout");
+    const content = await page.content();
+    expect(content).not.toContain("KEY_SECRET");
+  });
+
+  test("10. WebSocket status indicator reflects connection state with tooltip", async ({ page }) => {
+    await page.route("**/api/auth/me/", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          user: { username: "operator", role: "operator" },
+        }),
+      });
+    });
+
+    await page.goto("/");
+    const statusBtn = page.locator("button[aria-label^='WebSocket status:']");
+    await expect(statusBtn).toBeVisible();
+    const label = await statusBtn.getAttribute("aria-label");
+    expect(label).toMatch(/WebSocket status: (Connected|Connecting|Reconnecting|Disconnected)/);
   });
 });

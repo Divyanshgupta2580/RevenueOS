@@ -63,6 +63,7 @@ class PaymentRepository:
             "max_retries_allowed": int(payment.get("max_retries_allowed", 3)),
             "recovery_status": payment.get("recovery_status", "pending"),
             "last_recovery_action_id": None,
+            "signature": payment.get("signature"),
             "created_at": payment.get("created_at", now),
             "updated_at": now,
         }
@@ -84,6 +85,7 @@ class PaymentRepository:
         status: str,
         recovery_status: str | None = None,
         last_action_id: str | None = None,
+        signature: str | None = None,
     ) -> bool:
         """Update payment and recovery status."""
         col = cls.get_collection()
@@ -95,6 +97,8 @@ class PaymentRepository:
             updates["recovery_status"] = recovery_status
         if last_action_id is not None:
             updates["last_recovery_action_id"] = last_action_id
+        if signature is not None:
+            updates["signature"] = signature
 
         res = col.update_one({"payment_id": payment_id}, {"$set": updates})
         return bool(res.modified_count > 0)
@@ -210,6 +214,8 @@ class DecisionRepository:
             "model_version": decision.get("model_version", default_model),
             "ai_recommendation": decision.get("ai_recommendation", {}),
             "policy_decision": decision.get("policy_decision", {}),
+            "execution_result": decision.get("execution_result"),
+            "execution_latency_ms": decision.get("execution_latency_ms"),
             "created_at": decision.get("created_at", now),
         }
 
@@ -221,7 +227,12 @@ class DecisionRepository:
     def get_by_id(cls, decision_id: str) -> dict[str, Any] | None:
         col = cls.get_collection()
         doc = col.find_one({"decision_id": decision_id}, {"_id": 0})
-        return dict(doc) if doc else None
+        if not doc:
+            return None
+        res = dict(doc)
+        if isinstance(res.get("created_at"), datetime):
+            res["created_at"] = res["created_at"].isoformat()
+        return res
 
     @classmethod
     def list_decisions(cls, page: int = 1, page_size: int = 50) -> tuple[list[dict[str, Any]], int]:
@@ -237,7 +248,13 @@ class DecisionRepository:
             .limit(bounded_size)
         )
         total = col.count_documents({}) if hasattr(col, "count_documents") else len(list(col.find({})))
-        return [dict(d) for d in cursor], total
+        records = []
+        for d in cursor:
+            item = dict(d)
+            if isinstance(item.get("created_at"), datetime):
+                item["created_at"] = item["created_at"].isoformat()
+            records.append(item)
+        return records, total
 
 
 class ActionRepository:

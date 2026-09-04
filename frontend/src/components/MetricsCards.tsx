@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, TrendingUp, CheckCircle, ShieldCheck, Zap } from "lucide-react";
+import { AlertTriangle, TrendingUp, CheckCircle2, BarChart2, Percent } from "lucide-react";
 import type { MetricSummary } from "@/lib/types";
 import { formatPaiseToRupees, formatPercentage } from "@/lib/format";
 
@@ -16,66 +16,172 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
   const incremental = metrics?.incrementalRevenuePaise ?? 0;
   const rate = metrics?.recoveryRate ?? 0;
 
+  const sampleCount = metrics?.observedSampleSize ?? (recovered > 0 ? 1 : 0);
+  const isTinySample = sampleCount < 30;
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 my-6">
-      {/* Revenue At Risk */}
-      <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden">
-        <div className="flex items-center justify-between text-zinc-400 mb-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider">Revenue at Risk</span>
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 my-6">
+      {/* 1. Revenue At Risk */}
+      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+        <div>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 shrink-0">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 font-medium">
+                REVENUE AT RISK
+              </span>
+            </div>
+            <div className="text-rose-500/70 shrink-0">
+              <BarChart2 className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-white font-mono">
+            {loading ? "..." : formatPaiseToRupees(atRisk)}
+          </div>
+          <div className="text-xs text-zinc-400 mt-1">Identified failed payments</div>
         </div>
-        <div className="text-xl font-semibold tracking-tight text-white font-mono">
-          {loading ? "..." : formatPaiseToRupees(atRisk)}
+        <div className="text-[10px] text-zinc-500 mt-3 pt-2 border-t border-[#141d30] flex items-center justify-between font-mono">
+          <span>Source: MongoDB Atlas</span>
+          <span className="text-zinc-400">Integer minor units</span>
         </div>
-        <div className="text-[11px] text-zinc-500 mt-1">Identified failed payments</div>
       </div>
 
-      {/* Expected Recoverable */}
-      <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden">
-        <div className="flex items-center justify-between text-zinc-400 mb-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider">Expected Recoverable</span>
-          <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
+      {/* 2. Expected Recoverable */}
+      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+        <div>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shrink-0">
+                <BarChart2 className="w-4 h-4" />
+              </div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 font-medium">
+                EXPECTED RECOVERABLE
+              </span>
+            </div>
+            <div className="text-amber-500/70 shrink-0">
+              <TrendingUp className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-amber-400 font-mono">
+            {loading ? "..." : formatPaiseToRupees(expected)}
+          </div>
+          <div className="text-xs text-zinc-400 mt-1">Deterministic ERV sum</div>
         </div>
-        <div className="text-xl font-semibold tracking-tight text-amber-400 font-mono">
-          {loading ? "..." : formatPaiseToRupees(expected)}
+        <div className="text-[10px] text-zinc-500 mt-3 pt-2 border-t border-[#141d30] flex items-center justify-between font-mono">
+          <span>Model: Radar scoring</span>
+          <span className="text-amber-400/80">Authoritative math</span>
         </div>
-        <div className="text-[11px] text-zinc-500 mt-1">Deterministic ERV sum</div>
       </div>
 
-      {/* Actually Recovered */}
-      <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden">
-        <div className="flex items-center justify-between text-zinc-400 mb-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider">Actually Recovered</span>
-          <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+      {/* 3. Actually Recovered */}
+      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+        <div>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 font-medium">
+                ACTUALLY RECOVERED
+              </span>
+            </div>
+            <div className="text-teal-500/70 shrink-0">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-teal-400 font-mono">
+            {loading ? "..." : formatPaiseToRupees(recovered)}
+          </div>
+          <div className="text-xs text-zinc-400 mt-1">
+            {sampleCount > 0 ? `${sampleCount} verified transaction${sampleCount === 1 ? "" : "s"}` : "0 transactions"}
+          </div>
         </div>
-        <div className="text-xl font-semibold tracking-tight text-emerald-400 font-mono">
-          {loading ? "..." : formatPaiseToRupees(recovered)}
+        <div className="text-[10px] text-zinc-400 mt-3 pt-2 border-t border-[#141d30] flex flex-col gap-0.5 font-mono">
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500">Attribution:</span>
+            <span className={isTinySample ? "text-amber-400/90 font-medium" : "text-teal-400"}>
+              {isTinySample ? "Insufficient sample size" : "Measured"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500">Baseline comparison:</span>
+            <span className="text-zinc-400">Illustrative</span>
+          </div>
         </div>
-        <div className="text-[11px] text-zinc-500 mt-1">Verified webhook captures</div>
       </div>
 
-      {/* Incremental Revenue */}
-      <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden">
-        <div className="flex items-center justify-between text-zinc-400 mb-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider">Estimated Lift</span>
-          <Zap className="w-3.5 h-3.5 text-cyan-400" />
+      {/* 4. Estimated Lift */}
+      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+        <div>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 font-medium">
+                ESTIMATED LIFT
+              </span>
+            </div>
+            <div className="text-blue-500/70 shrink-0">
+              <BarChart2 className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-cyan-400 font-mono">
+            {loading ? "..." : formatPaiseToRupees(incremental)}
+          </div>
+          <div className="text-xs text-zinc-400 mt-1">Above baseline control</div>
         </div>
-        <div className="text-xl font-semibold tracking-tight text-cyan-400 font-mono">
-          {loading ? "..." : formatPaiseToRupees(incremental)}
+        <div className="text-[10px] text-zinc-400 mt-3 pt-2 border-t border-[#141d30] flex flex-col gap-0.5 font-mono">
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500">Significance:</span>
+            <span className={isTinySample ? "text-amber-400/90 font-medium" : "text-cyan-400"}>
+              {isTinySample ? "INSUFFICIENT SAMPLE SIZE" : "Statistically valid"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500">Baseline assumption:</span>
+            <span className="text-zinc-400">8% heuristic</span>
+          </div>
         </div>
-        <div className="text-[11px] text-zinc-500 mt-1">Above baseline assumption</div>
       </div>
 
-      {/* Recovery Rate */}
-      <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d] relative overflow-hidden col-span-2 md:col-span-1">
-        <div className="flex items-center justify-between text-zinc-400 mb-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider">Recovery Rate</span>
-          <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+      {/* 5. Recovery Rate */}
+      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+        <div>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                <Percent className="w-4 h-4" />
+              </div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 font-medium">
+                RECOVERY RATE
+              </span>
+            </div>
+            <div className="text-indigo-500/70 shrink-0">
+              <Percent className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold tracking-tight text-white font-mono">
+            {loading ? "..." : formatPercentage(rate)}
+          </div>
+          <div className="text-xs text-zinc-400 mt-1">
+            {sampleCount > 0 ? `Observed recovery (${sampleCount} txn)` : "Total conversion efficiency"}
+          </div>
         </div>
-        <div className="text-xl font-semibold tracking-tight text-white font-mono">
-          {loading ? "..." : formatPercentage(rate)}
+        <div className="text-[10px] text-zinc-400 mt-3 pt-2 border-t border-[#141d30] flex flex-col gap-0.5 font-mono">
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500">Sample size:</span>
+            <span className={isTinySample ? "text-amber-400/90 font-medium" : "text-emerald-400"}>
+              {isTinySample ? `${sampleCount} (Low statistical power)` : `${sampleCount} txns`}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500">Causal claim:</span>
+            <span className="text-zinc-400">Non-definitive</span>
+          </div>
         </div>
-        <div className="text-[11px] text-zinc-500 mt-1">Total conversion efficiency</div>
       </div>
     </div>
   );

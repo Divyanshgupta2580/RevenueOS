@@ -363,6 +363,34 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             )
             return
 
+        if msg_type == "decision.list":
+            page = int(payload.get("page", 1))
+            page_size = int(payload.get("pageSize", 50))
+
+            from asgiref.sync import sync_to_async
+
+            from apps.database.repositories import DecisionRepository
+
+            def fetch_decisions() -> dict[str, Any]:
+                records, total = DecisionRepository.list_decisions(page=page, page_size=page_size)
+                return {
+                    "decisions": records,
+                    "total": total,
+                    "page": page,
+                    "pageSize": page_size,
+                }
+
+            decision_data = await sync_to_async(fetch_decisions)()
+
+            await self.send(
+                text_data=build_response(
+                    "decision.list.response",
+                    decision_data,
+                    request_id=request_id,
+                )
+            )
+            return
+
         if msg_type == "decision.explain":
             dec_arg = payload.get("decisionId")
             if not dec_arg:
@@ -373,6 +401,7 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
 
             from asgiref.sync import sync_to_async
 
+            from apps.brain.service import RecoveryBrainService
             from apps.database.repositories import DecisionRepository
 
             did = str(dec_arg)
@@ -381,11 +410,23 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                 return DecisionRepository.get_by_id(did)
 
             decision_doc = await sync_to_async(get_explanation)()
+            if not decision_doc:
+                await self.send(
+                    text_data=build_error("NOT_FOUND", f"Decision '{did}' not found.", request_id)
+                )
+                return
+
+            brain_svc = RecoveryBrainService()
+            explanation_out = await brain_svc.explain_decision_async(decision_doc)
 
             await self.send(
                 text_data=build_response(
                     "decision.explain.response",
-                    {"decisionId": did, "decision": decision_doc},
+                    {
+                        "decisionId": did,
+                        "decision": decision_doc,
+                        "explanation": explanation_out.model_dump(),
+                    },
                     request_id=request_id,
                 )
             )

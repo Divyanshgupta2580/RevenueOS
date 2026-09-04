@@ -1,8 +1,7 @@
-"""Recovery Brain Service: Coordinates input sanitization, decision context building, inference, and audit packaging."""
-
 import asyncio
 import logging
 import time
+import uuid
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Literal
 
@@ -10,6 +9,8 @@ from apps.brain.provider import GeminiProvider
 from apps.brain.schemas import (
     CurrentPaymentData,
     CustomerHistoryData,
+    DecisionContextEnvelope,
+    DecisionExplanationOutput,
     EconomicContextData,
     FailureContextData,
     MerchantPolicyData,
@@ -416,3 +417,276 @@ class RecoveryBrainService:
             total_latency,
         )
         return output
+
+    def build_context_envelope(
+        self,
+        payment: dict[str, Any],
+        endpoint: str = "recovery.analyze",
+        ai_task: str = "RECOVERY_INTERVENTION_ANALYSIS",
+        request_id: str | None = None,
+        now: datetime | None = None,
+    ) -> DecisionContextEnvelope:
+        """Construct the standardized, bounded AI Decision Context Envelope."""
+        if now is None:
+            now = datetime.now(UTC)
+        input_ctx = self.build_decision_context(payment, now=now)
+        req_id = request_id or f"req_{uuid.uuid4().hex[:10]}"
+
+        # Map to envelope format
+        return DecisionContextEnvelope(
+            protocolVersion="1.0",
+            aiTask=ai_task,
+            endpoint=endpoint,
+            requestId=req_id,
+            entityType="payment",
+            entityId=input_ctx.payment_id,
+            timestamp=now.isoformat(),
+            verifiedFacts={
+                "paymentId": input_ctx.payment_id,
+                "amountPaise": input_ctx.amount_paise,
+                "currency": input_ctx.currency,
+                "status": input_ctx.current_payment.status if input_ctx.current_payment else "failed",
+                "paymentMethod": input_ctx.current_payment.method if input_ctx.current_payment else "unknown",
+                "failureCode": input_ctx.current_payment.failure_code if input_ctx.current_payment else None,
+                "failureDescription": input_ctx.failure_reason,
+            },
+            backendCalculations={
+                "paymentAgeHours": input_ctx.age_hours,
+                "failureCategory": input_ctx.failure_category,
+                "retryCount": input_ctx.retry_count,
+                "maxRetriesAllowed": input_ctx.max_retries_allowed,
+                "recoverabilityScore": input_ctx.recoverability_score,
+                "expectedRecoveryValuePaise": input_ctx.economic_context.backend_expected_recovery_value_paise if input_ctx.economic_context else 0,
+                "estimatedRecoveryProbability": input_ctx.economic_context.estimated_recovery_probability if input_ctx.economic_context else 0.0,
+            },
+            historicalEvidence={
+                "customerId": input_ctx.customer_history.customer_id if input_ctx.customer_history else "unknown",
+                "customerSuccessfulPayments": input_ctx.customer_history.total_successful_payments if input_ctx.customer_history else 0,
+                "customerFailedPayments": input_ctx.customer_history.total_failed_payments if input_ctx.customer_history else 0,
+                "recoveryAttempts": input_ctx.recovery_history.actions_attempted_count if input_ctx.recovery_history else 0,
+            },
+            policyConstraints={
+                "maxRetries": input_ctx.merchant_policy.max_retries_allowed if input_ctx.merchant_policy else 3,
+                "cooldownSeconds": input_ctx.merchant_policy.cooldown_seconds if input_ctx.merchant_policy else 300,
+                "allowedActions": input_ctx.merchant_policy.allowed_actions if input_ctx.merchant_policy else ["RETRY", "PAYMENT_LINK", "REMINDER", "STOP"],
+            },
+            economicContext={
+                "amountAtRiskPaise": input_ctx.amount_paise,
+                "backendERVPaise": input_ctx.economic_context.backend_expected_recovery_value_paise if input_ctx.economic_context else 0,
+                "baselineControlPaise": input_ctx.economic_context.baseline_control_paise if input_ctx.economic_context else 0,
+            },
+            temporalContext={
+                "serverTimestamp": now.isoformat(),
+                "paymentAgeHours": input_ctx.age_hours,
+                "cooldownRemainingSeconds": input_ctx.recovery_history.cooldown_remaining_seconds if input_ctx.recovery_history else 0,
+            },
+            systemCapabilities={
+                "mode": "Test Mode",
+                "paymentLinkApiAvailable": True,
+                "simulatedRetryAvailable": True,
+            },
+            previousRecoveryActions=input_ctx.recovery_history.previous_actions if input_ctx.recovery_history else [],
+            allowedActions=[k for k, v in (input_ctx.system_state.action_eligibility if input_ctx.system_state else {}).items() if v],
+            forbiddenActions=[k for k, v in (input_ctx.system_state.action_eligibility if input_ctx.system_state else {}).items() if not v],
+            requiredOutput={
+                "action": "RETRY | PAYMENT_LINK | REMINDER | STOP",
+                "confidence": "float in [0.0, 1.0]",
+                "expected_recovery_value_paise": "integer paise",
+                "reason": "string",
+                "supporting_factors": "list of strings",
+            },
+        )
+
+    def build_explanation_context_envelope(
+        self,
+        decision: dict[str, Any],
+        request_id: str | None = None,
+        now: datetime | None = None,
+    ) -> DecisionContextEnvelope:
+        """Construct endpoint-specific Decision Context Envelope for decision.explain.
+
+        Strictly different from recovery.analyze: focuses on audit evaluation,
+        policy rules applied, and reasoning justification rather than new action selection.
+        """
+        if now is None:
+            now = datetime.now(UTC)
+        req_id = request_id or f"req_exp_{uuid.uuid4().hex[:10]}"
+        did = str(decision.get("decision_id", "unknown"))
+        pid = str(decision.get("payment_id", "unknown"))
+        ai_rec = decision.get("ai_recommendation", {})
+        policy_dec = decision.get("policy_decision", {})
+
+        return DecisionContextEnvelope(
+            protocolVersion="1.0",
+            aiTask="DECISION_EXPLANABILITY",
+            endpoint="decision.explain",
+            requestId=req_id,
+            entityType="decision",
+            entityId=did,
+            timestamp=now.isoformat(),
+            verifiedFacts={
+                "decisionId": did,
+                "paymentId": pid,
+                "evaluatedAction": ai_rec.get("action"),
+                "evaluatedConfidence": ai_rec.get("confidence"),
+                "createdAt": str(decision.get("created_at", "")),
+            },
+            backendCalculations={
+                "expectedRecoveryValuePaise": ai_rec.get("expected_recovery_value_paise", 0),
+                "evaluationLatencyMs": decision.get("execution_latency_ms", 0.0),
+            },
+            historicalEvidence={
+                "originalAiReason": ai_rec.get("reason", ""),
+                "originalSupportingFactors": ai_rec.get("supporting_factors", []),
+                "executionOutcome": decision.get("execution_result", {}).get("outcome"),
+            },
+            policyConstraints={
+                "policyStatus": policy_dec.get("status", "EVALUATED"),
+                "authorizedAction": policy_dec.get("authorized_action"),
+                "blockingRule": policy_dec.get("blocking_rule"),
+                "blockingReason": policy_dec.get("blocking_reason"),
+                "rulesEvaluated": [
+                    r.get("rule_name")
+                    for r in policy_dec.get("rules_evaluated", [])
+                    if isinstance(r, dict)
+                ],
+            },
+            economicContext={
+                "expectedRecoveryValuePaise": ai_rec.get("expected_recovery_value_paise", 0),
+            },
+            temporalContext={
+                "evaluatedAt": str(decision.get("created_at", "")),
+                "explanationRequestedAt": now.isoformat(),
+            },
+            systemCapabilities={
+                "mode": "Audit Verification",
+                "explainOnly": True,
+                "mutationAllowed": False,
+            },
+            previousRecoveryActions=[],
+            allowedActions=[],
+            forbiddenActions=["EXECUTE_MUTATION", "OVERRIDE_POLICY"],
+            requiredOutput={
+                "decision_id": "string",
+                "explanation": "clear human-readable narrative explanation",
+                "key_factors": "list of primary deciding factors",
+                "policy_alignment": "explanation of policy alignment",
+            },
+        )
+
+    def get_diagnostic_context(
+        self,
+        endpoint: str = "recovery.analyze",
+        sample_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Safe diagnostic inspection mechanism exposing structure without leaking sensitive data.
+
+        Audits and classifies all context fields into:
+        - VERIFIED_FACT
+        - BACKEND_CALCULATION
+        - HISTORICAL_EVIDENCE
+        - POLICY
+        - SYSTEM_STATE
+        - AI_TASK_METADATA
+        """
+        now = datetime.now(UTC)
+        if endpoint == "decision.explain":
+            sample_dec = sample_data or {
+                "decision_id": "dec_sample_audit_001",
+                "payment_id": "pay_sample_audit_001",
+                "created_at": now.isoformat(),
+                "ai_recommendation": {
+                    "action": "PAYMENT_LINK",
+                    "confidence": 0.85,
+                    "expected_recovery_value_paise": 50000,
+                    "reason": "Soft decline with high recoverability via payment link.",
+                    "supporting_factors": ["Soft decline", "Active cardholder history"],
+                },
+                "policy_decision": {
+                    "status": "APPROVED",
+                    "authorized_action": "PAYMENT_LINK",
+                    "blocking_rule": None,
+                    "rules_evaluated": [{"rule_name": "RETRY_LIMIT", "passed": True}],
+                },
+                "execution_latency_ms": 14.2,
+                "execution_result": {"outcome": "LINK_CREATED"},
+            }
+            envelope = self.build_explanation_context_envelope(sample_dec, now=now)
+        else:
+            sample_pay = sample_data or {
+                "payment_id": "pay_sample_radar_001",
+                "amount": 100000,
+                "currency": "INR",
+                "status": "failed",
+                "failure_category": "insufficient_funds",
+                "failure_reason": "Cardholder balance insufficient",
+                "retry_count": 1,
+                "max_retries_allowed": 3,
+                "customer_id": "cust_sample_01",
+                "created_at": now,
+            }
+            envelope = self.build_context_envelope(sample_pay, now=now)
+
+        envelope_dict = envelope.model_dump()
+
+        # Classify all top-level and nested fields
+        field_classification: dict[str, str] = {
+            "protocolVersion": "AI_TASK_METADATA",
+            "aiTask": "AI_TASK_METADATA",
+            "endpoint": "AI_TASK_METADATA",
+            "requestId": "AI_TASK_METADATA",
+            "entityType": "AI_TASK_METADATA",
+            "entityId": "AI_TASK_METADATA",
+            "timestamp": "AI_TASK_METADATA",
+            "requiredOutput": "AI_TASK_METADATA",
+            "verifiedFacts": "VERIFIED_FACT",
+            "backendCalculations": "BACKEND_CALCULATION",
+            "historicalEvidence": "HISTORICAL_EVIDENCE",
+            "policyConstraints": "POLICY",
+            "allowedActions": "POLICY",
+            "forbiddenActions": "POLICY",
+            "economicContext": "BACKEND_CALCULATION",
+            "temporalContext": "SYSTEM_STATE",
+            "systemCapabilities": "SYSTEM_STATE",
+            "previousRecoveryActions": "HISTORICAL_EVIDENCE",
+        }
+
+        # Verify zero sensitive credential keys exist
+        sensitive_patterns = [
+            "card_number",
+            "cvv",
+            "secret",
+            "api_key",
+            "password",
+            "token",
+            "session",
+        ]
+        stringified_context = str(envelope_dict).lower()
+        contains_sensitive_keys = any(
+            pat in stringified_context
+            for pat in sensitive_patterns
+            if f"'{pat}'" in stringified_context or f'"{pat}"' in stringified_context
+        )
+
+        return {
+            "endpoint": endpoint,
+            "aiTask": envelope.aiTask,
+            "envelopeStructure": {
+                k: type(v).__name__ if isinstance(v, (dict, list)) else f"<{type(v).__name__}>"
+                for k, v in envelope_dict.items()
+            },
+            "fieldClassification": field_classification,
+            "sanitizedSampleEnvelope": envelope_dict,
+            "securityAudit": {
+                "containsSensitiveCredentials": contains_sensitive_keys,
+                "boundedHistoryEnforced": True,
+                "monetaryUnitsIntegerMinor": True,
+                "zeroFloatingPointMoney": True,
+            },
+        }
+
+    async def explain_decision_async(
+        self, decision: dict[str, Any]
+    ) -> DecisionExplanationOutput:
+        """Explain an audit decision asynchronously via Gemini or deterministic fallback."""
+        return await self.provider.explain_decision_async(decision)

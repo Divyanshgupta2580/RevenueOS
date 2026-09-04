@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { FlaskConical } from "lucide-react";
 import Header from "@/components/Header";
 import MetricsCards from "@/components/MetricsCards";
 import RadarTable from "@/components/RadarTable";
@@ -33,12 +34,13 @@ export default function CommandCenterPage() {
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [loadingOpps, setLoadingOpps] = useState(false);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [loadingDecisions, setLoadingDecisions] = useState(false);
 
   const { state: connectionState, isConnected, request, send, on } = useWebSocket();
 
   // 1. Session verification on mount
   useEffect(() => {
-    const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://127.0.0.1:8000";
+    const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
     fetch(`${apiOrigin}/api/auth/me/`, { credentials: "include" })
       .then((res) => {
         if (!res.ok) {
@@ -65,6 +67,7 @@ export default function CommandCenterPage() {
     if (isConnected) {
       send("revenue.list", { page: 1, limit: 50 });
       send("metrics.summary", {});
+      send("decision.list", { page: 1, pageSize: 50 });
     }
   }, [isConnected, send]);
 
@@ -87,6 +90,21 @@ export default function CommandCenterPage() {
       if (p) setMetrics(p);
     });
 
+    const unsubDecisions = on("decision.list.response", (msg: ServerMessage) => {
+      const p = msg.payload as { decisions?: DecisionRecord[] } | undefined;
+      if (p?.decisions) {
+        setDecisions(p.decisions);
+      }
+      setLoadingDecisions(false);
+    });
+
+    const unsubDecisionCreated = on("decision.created", (msg: ServerMessage) => {
+      const p = msg.payload as DecisionRecord | undefined;
+      if (p) {
+        setDecisions((prev) => [p, ...prev.filter((d) => d.decisionId !== p.decisionId)]);
+      }
+    });
+
     const unsubRevUpdated = on("revenue.updated", () => {
       refreshData();
     });
@@ -99,6 +117,8 @@ export default function CommandCenterPage() {
       unsubList();
       unsubMetrics();
       unsubMetricsUpdate();
+      unsubDecisions();
+      unsubDecisionCreated();
       unsubRevUpdated();
       unsubPaymentUpdated();
     };
@@ -113,7 +133,7 @@ export default function CommandCenterPage() {
 
   // 5. Logout
   const handleLogout = async () => {
-    const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://127.0.0.1:8000";
+    const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
     try {
       await fetch(`${apiOrigin}/api/auth/logout/`, {
         method: "POST",
@@ -134,6 +154,23 @@ export default function CommandCenterPage() {
         12000
       );
       return resp.payload?.recommendation || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // 6b. Gemini 3.6 Flash Decision Explanation
+  const handleExplainDecision = async (decisionId: string) => {
+    try {
+      const resp = await request<
+        { decisionId: string },
+        { explanation?: { summary?: string; decisionFactors?: string[]; counterfactuals?: string[]; policyAlignment?: string; confidenceAssessment?: string } }
+      >(
+        "decision.explain",
+        { decisionId },
+        12000
+      );
+      return resp.payload?.explanation || null;
     } catch {
       return null;
     }
@@ -233,45 +270,90 @@ export default function CommandCenterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#08090b] text-[#f0f6fc] flex flex-col">
+    <div className="min-h-screen bg-[#070b16] text-[#f0f6fc] flex flex-col overflow-x-hidden">
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         connectionState={connectionState}
         user={user}
         onLogout={handleLogout}
+        onRefresh={refreshData}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6">
-        {/* Top KPI Metrics Banner */}
-        <MetricsCards metrics={metrics} loading={loadingMetrics} />
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 min-w-0 overflow-x-hidden">
+        {activeTab === "checkout" ? (
+          <div>
+            {/* Section Header: PAYMENTS & Test Mode card */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+              <div>
+                <div className="text-[11px] font-mono tracking-wider uppercase text-zinc-500 font-medium mb-1">
+                  PAYMENTS
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+                  Secure Payments for Revenue Recovery
+                </h1>
+                <p className="text-xs sm:text-sm text-zinc-400 mt-1 max-w-2xl">
+                  Process test transactions through Razorpay while securely verifying server-side payment signatures and recording verified outcomes.
+                </p>
+              </div>
 
-        {/* Tab 1: Revenue Radar */}
-        {activeTab === "radar" && (
-          <RadarTable
-            opportunities={opportunities}
-            loading={loadingOpps}
-            onSelectOpportunity={(opp) => setSelectedOpp(opp)}
-            onRefresh={refreshData}
-          />
-        )}
+              {/* Compact Test Mode card */}
+              <div className="shrink-0 bg-[#091021] border border-[#1b263b] rounded-xl p-3.5 flex items-center justify-between gap-4 max-w-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                    <FlaskConical className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-white">
+                      Test Mode
+                    </div>
+                    <div className="text-[11px] text-zinc-400 leading-tight mt-0.5">
+                      You are using Razorpay Test Mode. No real money will be charged.
+                    </div>
+                  </div>
+                </div>
+                <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  TEST MODE
+                </span>
+              </div>
+            </div>
 
-        {/* Tab 2: Decision Ledger */}
-        {activeTab === "ledger" && (
-          <DecisionLedger
-            decisions={decisions}
-            loading={false}
-          />
-        )}
+            {/* KPI Row */}
+            <MetricsCards metrics={metrics} loading={loadingMetrics} />
 
-        {/* Tab 3: Outcome Metrics */}
-        {activeTab === "metrics" && (
-          <MetricsView metrics={metrics} />
-        )}
+            {/* Central Razorpay Checkout Card */}
+            <RazorpayCheckoutView onPaymentComplete={() => refreshData()} />
+          </div>
+        ) : (
+          <div>
+            {/* Tab 1: Revenue Radar */}
+            {activeTab === "radar" && (
+              <RadarTable
+                opportunities={opportunities}
+                loading={loadingOpps}
+                onSelectOpportunity={(opp) => setSelectedOpp(opp)}
+                onRefresh={refreshData}
+                onGoToCheckout={() => setActiveTab("checkout")}
+              />
+            )}
 
-        {/* Tab 4: Razorpay Standard Checkout */}
-        {activeTab === "checkout" && (
-          <RazorpayCheckoutView onPaymentComplete={() => refreshData()} />
+            {/* Tab 2: Decision Ledger */}
+            {activeTab === "ledger" && (
+              <DecisionLedger
+                decisions={decisions}
+                loading={loadingDecisions}
+                onExplain={handleExplainDecision}
+              />
+            )}
+
+            {/* Tab 3: Outcome Metrics */}
+            {activeTab === "metrics" && (
+              <div className="space-y-6">
+                <MetricsCards metrics={metrics} loading={loadingMetrics} />
+                <MetricsView metrics={metrics} />
+              </div>
+            )}
+          </div>
         )}
 
         {/* Opportunity Detail Drawer */}
@@ -280,6 +362,10 @@ export default function CommandCenterPage() {
           onClose={() => setSelectedOpp(null)}
           onAnalyze={handleAnalyzeOpportunity}
           onExecute={handleExecuteOpportunity}
+          onInspectDecision={() => {
+            setSelectedOpp(null);
+            setActiveTab("ledger");
+          }}
         />
       </main>
     </div>

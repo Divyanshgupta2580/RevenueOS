@@ -10,6 +10,7 @@ export type ClientMessageType =
   | "revenue.details"
   | "recovery.analyze"
   | "recovery.execute"
+  | "decision.list"
   | "decision.explain"
   | "metrics.summary";
 
@@ -25,6 +26,7 @@ export type ServerMessageType =
   | "recovery.executed"
   | "payment.updated"
   | "payment_link.updated"
+  | "decision.list.response"
   | "decision.created"
   | "decision.explain.response"
   | "metrics.summary.response"
@@ -57,6 +59,7 @@ export interface ServerMessage<T = unknown> {
 export type ConnectionState =
   | "DISCONNECTED"
   | "CONNECTING"
+  | "RECONNECTING"
   | "CONNECTED"
   | "STALE"
   | "ERROR";
@@ -71,13 +74,25 @@ export interface MetricSummary {
   revenueAtRiskPaise: number;
   expectedRecoverablePaise: number;
   actuallyRecoveredPaise: number;
+  baselineControlPaise?: number;
   incrementalRevenuePaise: number;
   recoveryRate: number;
   activeOpportunities: number;
+  blockedActions?: number;
+  observedSampleSize?: number;
+  attributionConfidence?: string;
+  baselineAssumption?: string;
+  baselineComparison?: string;
+  statisticalSignificance?: string;
+  sampleSizeHonestNote?: string;
 }
 
 export interface Opportunity {
   paymentId: string;
+  orderId?: string;
+  customerId?: string;
+  customerEmail?: string;
+  customerMasked?: string;
   amountPaise: number;
   currency: string;
   status: string;
@@ -85,11 +100,20 @@ export interface Opportunity {
   failureReason: string;
   retryCount: number;
   maxRetries: number;
+  paymentAge?: string;
   recoverabilityScore: number;
   expectedRecoveryValuePaise: number;
+  recommendedIntervention?: string;
+  heuristicRecommendedAction?: string;
+  aiConfidence?: number;
+  lastAction?: string;
+  nextEligibleAction?: string;
   priority: "HIGH" | "MEDIUM" | "LOW";
+  policyStatus?: "APPROVED" | "BLOCKED";
+  policyReason?: string;
   recoveryStatus: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface BrainRecommendation {

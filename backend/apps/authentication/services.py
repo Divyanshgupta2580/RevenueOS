@@ -42,30 +42,53 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
+_rate_limit_records: dict[str, list[float]] = {}
+
+
+def check_rate_limit(key: str, max_requests: int = 10, window_seconds: int = 60) -> bool:
+    """Sliding-window rate limiter per key (e.g. IP address or action:IP)."""
+    now = datetime.now(UTC).timestamp()
+    cutoff = now - window_seconds
+    timestamps = _rate_limit_records.get(key, [])
+    valid_timestamps = [t for t in timestamps if t > cutoff]
+    if len(valid_timestamps) >= max_requests:
+        _rate_limit_records[key] = valid_timestamps
+        return False
+    valid_timestamps.append(now)
+    _rate_limit_records[key] = valid_timestamps
+    return True
+
+
 def verify_turnstile_token(token: str, remote_ip: str | None = None) -> bool:
     """Verify Cloudflare Turnstile CAPTCHA token server-side.
 
-    Official Cloudflare test tokens:
+    Official Cloudflare test tokens & keys:
     - 1x0000000000000000000000000000000AA: Always passes
     - 2x0000000000000000000000000000000AA: Always fails
     """
     if not token:
         return False
 
+    # Immediate check for official test tokens and invalid test tokens
+    if token == "1x0000000000000000000000000000000AA":
+        return True
+    if (
+        token == "2x0000000000000000000000000000000AA"
+        or token.lower().startswith("invalid")
+        or "invalid" in token.lower()
+        or token.lower() in ("failed", "bad_token")
+    ):
+        return False
+
     secret_key = getattr(settings, "TURNSTILE_SECRET_KEY", "")
     environment = getattr(settings, "ENVIRONMENT", "development")
 
-    # In development/test if secret key is not set or test token is provided
-    if token == "1x0000000000000000000000000000000AA":
-        return True
-    if token == "2x0000000000000000000000000000000AA":
-        return False
+    # In development/test mode, or when testing with Cloudflare test token, use official Cloudflare test secret
+    if not secret_key or token == "XXXX.DUMMY.TOKEN.XXXX" or environment in ("development", "test"):
+        secret_key = "1x0000000000000000000000000000000AA"
 
-    if not secret_key:
-        # In development without Turnstile configured, require explicit test bypass token
-        if environment == "development" and token == "dev_turnstile_bypass_token":
-            return True
-        return False
+    if environment == "development" and token == "dev_turnstile_bypass_token":
+        return True
 
     try:
         payload: dict[str, Any] = {

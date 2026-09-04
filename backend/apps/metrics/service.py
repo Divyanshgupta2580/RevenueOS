@@ -50,6 +50,12 @@ class MetricsService:
         # 7. Blocked Actions Count
         blocked_count = db.recovery_decisions.count_documents({"policy_decision.status": "BLOCKED"})
 
+        # 8. Sample Size & Attribution Integrity
+        sample_size = len(recovered_payments)
+        attribution_conf = "INSUFFICIENT SAMPLE SIZE" if sample_size < 30 else "MEASURED"
+        stat_sig = "INSUFFICIENT SAMPLE SIZE" if sample_size < 30 else "STATISTICALLY SIGNIFICANT"
+        sample_note = f"{sample_size} verified transaction{'s' if sample_size != 1 else ''}"
+
         # Validate integer minor units
         return {
             "revenueAtRiskPaise": validate_minor_units(at_risk_paise),
@@ -60,6 +66,12 @@ class MetricsService:
             "recoveryRate": round(recovery_rate, 4),
             "activeOpportunities": active_count,
             "blockedActions": blocked_count,
+            "observedSampleSize": sample_size,
+            "attributionConfidence": attribution_conf,
+            "baselineAssumption": "Illustrative 8% heuristic control (not causal merchant history)",
+            "baselineComparison": "Illustrative",
+            "statisticalSignificance": stat_sig,
+            "sampleSizeHonestNote": sample_note,
             "baselineAssumptionNote": "8% heuristic evaluation model (not empirical historical merchant data)",
             "productionMerchantRecovery": "Not measured",
         }

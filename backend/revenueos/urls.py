@@ -3,7 +3,7 @@
 from django.http import JsonResponse
 from django.urls import path
 
-from apps.authentication.views import login_view, logout_view, me_view
+from apps.authentication.views import login_view, logout_view, me_view, register_view
 from apps.razorpay_adapter.views import create_order_view, verify_payment_view
 from apps.webhooks.views import razorpay_webhook_view
 
@@ -51,9 +51,14 @@ urlpatterns = [
     path("health/", health_check, name="health"),
     path("ready/", readiness_check, name="ready"),
     # Authentication
+    path("api/auth/register/", register_view, name="auth_register"),
+    path("api/auth/register", register_view, name="auth_register_noslash"),
     path("api/auth/login/", login_view, name="auth_login"),
+    path("api/auth/login", login_view, name="auth_login_noslash"),
     path("api/auth/logout/", logout_view, name="auth_logout"),
+    path("api/auth/logout", logout_view, name="auth_logout_noslash"),
     path("api/auth/me/", me_view, name="auth_me"),
+    path("api/auth/me", me_view, name="auth_me_noslash"),
     # Webhooks
     path("api/webhooks/razorpay/", razorpay_webhook_view, name="razorpay_webhook"),
     # Razorpay Standard Web Checkout

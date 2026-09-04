@@ -3,6 +3,8 @@
 .env.local
 .env.*.local
 *.env
+*.sqlite3
+scratch/
 
 # Python
 __pycache__/

@@ -55,6 +55,9 @@ export class RevenueWebSocketClient {
     const defaultUrl =
       process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/v1/app/";
     this.url = url || defaultUrl;
+    if (typeof window !== "undefined") {
+      (window as unknown as { __REVENUE_WS_CLIENT__?: RevenueWebSocketClient }).__REVENUE_WS_CLIENT__ = this;
+    }
   }
 
   public static getInstance(url?: string): RevenueWebSocketClient {
@@ -132,6 +135,17 @@ export class RevenueWebSocketClient {
         }
       }
     };
+  }
+
+  public dispatchServerMessage(message: ServerMessage): void {
+    const typeListeners = this.listeners.get(message.type);
+    if (typeListeners) {
+      typeListeners.forEach((handler) => handler(message));
+    }
+    const wildcardListeners = this.listeners.get("*");
+    if (wildcardListeners) {
+      wildcardListeners.forEach((handler) => handler(message));
+    }
   }
 
   /**
@@ -248,12 +262,14 @@ export class RevenueWebSocketClient {
 
     if (event.code === 4401) {
       // Unauthorized: session invalid or expired
-      this.setState("ERROR");
+      this.setState("DISCONNECTED");
       return;
     }
 
-    this.setState("DISCONNECTED");
-    if (!this.isExplicitlyClosed) {
+    if (this.isExplicitlyClosed) {
+      this.setState("DISCONNECTED");
+    } else {
+      this.setState("RECONNECTING");
       this.scheduleReconnect();
     }
   }
@@ -297,6 +313,7 @@ export class RevenueWebSocketClient {
 
   private scheduleReconnect(): void {
     this.clearReconnectTimer();
+    this.setState("RECONNECTING");
 
     // Exponential backoff with jitter: min(30s, 1s * 2^attempt) +- jitter
     const baseWait = Math.min(30000, 1000 * Math.pow(2, this.reconnectAttempt));

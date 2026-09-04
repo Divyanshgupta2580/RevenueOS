@@ -69,20 +69,88 @@ class RevenueRadarService:
             "actionProbability": action_p,
         }
 
+        # Privacy-safe masked customer display
+        cust_email = payment.get("customer_email")
+        cust_id = payment.get("customer_id")
+        if cust_email and "@" in str(cust_email):
+            parts = str(cust_email).split("@", 1)
+            name, domain = parts[0], parts[1]
+            masked_name = name[:2] + "***" if len(name) > 2 else name[:1] + "***"
+            customer_masked = f"{masked_name}@{domain}"
+        elif cust_id:
+            c_str = str(cust_id)
+            customer_masked = c_str[:4] + "..." + c_str[-3:] if len(c_str) > 7 else c_str
+        else:
+            customer_masked = "Anonymous"
+
+        # Payment age
+        created_at_raw = payment.get("created_at")
+        if isinstance(created_at_raw, datetime):
+            age_sec = max(0, int((now - created_at_raw).total_seconds()))
+        else:
+            age_sec = 0
+
+        if age_sec < 60:
+            payment_age = f"{age_sec}s ago"
+        elif age_sec < 3600:
+            payment_age = f"{age_sec // 60}m ago"
+        elif age_sec < 86400:
+            payment_age = f"{age_sec // 3600}h ago"
+        else:
+            payment_age = f"{age_sec // 86400}d ago"
+
+        # Deterministic Priority
+        if score >= 70:
+            priority = "HIGH"
+        elif score >= 40:
+            priority = "MEDIUM"
+        else:
+            priority = "LOW"
+
+        # Next eligible action & Deterministic Policy Status
+        rec_status = str(payment.get("recovery_status", "pending"))
+        is_terminal = category in ["fraud", "lost_stolen_card", "card_expired", "account_closed"]
+        if is_terminal or retry_count >= max_retries or rec_status in ["recovered", "abandoned"]:
+            next_action = "STOP"
+            policy_status = "BLOCKED"
+            if is_terminal:
+                policy_reason = f"Terminal decline '{category}' blocked by anti-fraud policy"
+            elif retry_count >= max_retries:
+                policy_reason = f"Retry ceiling reached ({retry_count}/{max_retries})"
+            else:
+                policy_reason = "Transaction already settled or abandoned"
+        else:
+            next_action = action
+            policy_status = "APPROVED"
+            policy_reason = f"Action {action} conforms to merchant recovery limits"
+
         return {
             "paymentId": payment_id,
             "orderId": payment.get("order_id"),
             "customerId": payment.get("customer_id"),
             "customerEmail": payment.get("customer_email"),
+            "customerMasked": customer_masked,
             "amountPaise": amount_paise,
             "formattedAmount": format_paise_to_inr_string(amount_paise),
             "currency": payment.get("currency", "INR"),
             "status": payment.get("status", "failed"),
-            "recoveryStatus": payment.get("recovery_status", "pending"),
+            "recoveryStatus": rec_status,
+            "failureCategory": category,
+            "failureReason": str(payment.get("failure_reason") or category),
+            "retryCount": retry_count,
+            "maxRetries": max_retries,
+            "paymentAge": payment_age,
             "recoverabilityScore": score,
             "expectedRecoveryValuePaise": erv_paise,
             "formattedERV": format_paise_to_inr_string(erv_paise),
+            "recommendedIntervention": payment.get("ai_recommended_action") or action,
             "heuristicRecommendedAction": action,
+            "aiConfidence": payment.get("ai_confidence"),
+            "lastAction": payment.get("last_recovery_action", "NONE"),
+            "nextEligibleAction": next_action,
+            "policyStatus": policy_status,
+            "policyReason": policy_reason,
+            "priority": priority,
             "factors": factors,
             "createdAt": payment.get("created_at", now).isoformat() if hasattr(payment.get("created_at"), "isoformat") else str(payment.get("created_at")),
             "updatedAt": payment.get("updated_at", now).isoformat() if hasattr(payment.get("updated_at"), "isoformat") else str(payment.get("updated_at")),

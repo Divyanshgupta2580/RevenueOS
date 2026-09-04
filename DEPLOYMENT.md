@@ -51,7 +51,7 @@ Render Web Service (Django Channels + Uvicorn)
 | `RAZORPAY_KEY_SECRET` | Razorpay Test Mode Key Secret | Secret string |
 | `RAZORPAY_WEBHOOK_SECRET` | Secret configured in Razorpay Dashboard for webhook signatures | Webhook secret string |
 | `GEMINI_API_KEY` | Google AI Studio Gemini API Key | API key string |
-| `GEMINI_MODEL` | Gemini model variant | `gemini-3.8-flash` |
+| `GEMINI_MODEL` | Gemini model variant | `gemini-3.6-flash` |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile server verification secret | `0x4AAAAAA...` |
 
 ### B. Vercel Frontend Environment Variables
@@ -126,4 +126,4 @@ curl https://revenueos-backend.onrender.com/ready/
 ## 5. Free-Tier Operational Constraints
 - **Render Free Tier Spin-Down**: Free Render web services spin down after 15 minutes of inactivity. First incoming requests take 30-50s to cold start. The frontend WebSocket client includes exponential backoff with automatic reconnection.
 - **MongoDB Atlas Free Limits**: 512MB storage and 100 concurrent connections. RevenueOS uses singleton connection pooling and indexed bounded queries.
-- **Gemini Free Tier Rate Limits**: 15 RPM (Requests Per Minute) for Gemini 2.5 Flash free tier. Guarded Autopilot gates requests and handles rate limits with safe fallback.
+- **Gemini Free Tier Rate Limits**: 15 RPM (Requests Per Minute) for Gemini 3.6 Flash free tier. Guarded Autopilot gates requests and handles rate limits with safe fallback.

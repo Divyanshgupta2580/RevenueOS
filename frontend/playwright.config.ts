@@ -6,7 +6,7 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   use: {
-    baseURL: "http://127.0.0.1:3005",
+    baseURL: "http://localhost:3000",
     trace: "on-first-retry",
   },
   projects: [
@@ -16,8 +16,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run start -- -p 3005",
-    url: "http://127.0.0.1:3005",
+    command: "npm run dev -- -p 3000",
+    url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 60000,
   },

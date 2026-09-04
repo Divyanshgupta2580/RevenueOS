@@ -187,3 +187,165 @@ def test_authenticated_access(seeded_user) -> None:
     assert data["user"]["username"] == TEST_USERNAME
     assert data["user"]["role"] == "operator"
     assert "password_hash" not in data["user"]
+
+
+def test_registration_success(mock_db) -> None:
+    """Acceptance Test: Successful registration creates user with Argon2id hash."""
+    client = Client()
+    payload = {
+        "email": "new.operator@revenueos.internal",
+        "password": "StrongPassword123!",
+        "confirmPassword": "StrongPassword123!",
+        "turnstileToken": VALID_TURNSTILE_TOKEN,
+    }
+    response = client.post(
+        "/api/auth/register/",
+        data=json.dumps(payload),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["user"]["username"] == "new.operator@revenueos.internal"
+    assert "password" not in data["user"]
+
+    # Verify user exists in database with Argon2id hash and NO plaintext password
+    from apps.authentication.services import get_user_by_username
+    user = get_user_by_username("new.operator@revenueos.internal")
+    assert user is not None
+    assert "password" not in user
+    assert user["password_hash"].startswith("$argon2")
+
+    # Verify no session cookie was manufactured automatically
+    assert SESSION_COOKIE_NAME not in response.cookies
+
+
+def test_registration_weak_password() -> None:
+    """Acceptance Test: Password < 8 characters is rejected."""
+    client = Client()
+    payload = {
+        "email": "operator.short@revenueos.internal",
+        "password": "short",
+        "confirmPassword": "short",
+        "turnstileToken": VALID_TURNSTILE_TOKEN,
+    }
+    response = client.post(
+        "/api/auth/register/",
+        data=json.dumps(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "WEAK_PASSWORD"
+
+
+def test_registration_password_mismatch() -> None:
+    """Acceptance Test: Non-matching passwords are rejected."""
+    client = Client()
+    payload = {
+        "email": "operator.mismatch@revenueos.internal",
+        "password": "Password1234!",
+        "confirmPassword": "DifferentPassword1234!",
+        "turnstileToken": VALID_TURNSTILE_TOKEN,
+    }
+    response = client.post(
+        "/api/auth/register/",
+        data=json.dumps(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "PASSWORD_MISMATCH"
+
+
+def test_registration_invalid_email() -> None:
+    """Acceptance Test: Malformed email is rejected."""
+    client = Client()
+    payload = {
+        "email": "not-an-email",
+        "password": "Password1234!",
+        "confirmPassword": "Password1234!",
+        "turnstileToken": VALID_TURNSTILE_TOKEN,
+    }
+    response = client.post(
+        "/api/auth/register/",
+        data=json.dumps(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_EMAIL"
+
+
+def test_registration_duplicate_email(seeded_user) -> None:
+    """Acceptance Test: Duplicate registration is safely rejected with 409."""
+    client = Client()
+    payload = {
+        "email": TEST_USERNAME,
+        "password": "AnotherPassword123!",
+        "confirmPassword": "AnotherPassword123!",
+        "turnstileToken": VALID_TURNSTILE_TOKEN,
+    }
+    response = client.post(
+        "/api/auth/register/",
+        data=json.dumps(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "ACCOUNT_EXISTS"
+
+
+def test_registration_invalid_turnstile() -> None:
+    """Acceptance Test: Invalid Turnstile token blocks registration."""
+    client = Client()
+    payload = {
+        "email": "operator.captcha@revenueos.internal",
+        "password": "Password1234!",
+        "confirmPassword": "Password1234!",
+        "turnstileToken": INVALID_TURNSTILE_TOKEN,
+    }
+    response = client.post(
+        "/api/auth/register/",
+        data=json.dumps(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CAPTCHA_FAILED"
+
+
+def test_registration_to_login_flow(mock_db) -> None:
+    """Acceptance Test: Complete Register -> Login -> Me user journey."""
+    client = Client()
+    email = "flow.test@revenueos.internal"
+    password = "FlowPassword999!"
+
+    # 1. Register
+    reg_res = client.post(
+        "/api/auth/register/",
+        data=json.dumps({
+            "email": email,
+            "password": password,
+            "confirmPassword": password,
+            "turnstileToken": VALID_TURNSTILE_TOKEN,
+        }),
+        content_type="application/json",
+    )
+    assert reg_res.status_code == 201
+
+    # 2. Login with registered credentials
+    login_res = client.post(
+        "/api/auth/login/",
+        data=json.dumps({
+            "username": email,
+            "password": password,
+            "turnstileToken": VALID_TURNSTILE_TOKEN,
+        }),
+        content_type="application/json",
+    )
+    assert login_res.status_code == 200
+    assert SESSION_COOKIE_NAME in login_res.cookies
+
+    # 3. Check /api/auth/me/
+    token = login_res.cookies[SESSION_COOKIE_NAME].value
+    client.cookies[SESSION_COOKIE_NAME] = token
+    me_res = client.get("/api/auth/me/")
+    assert me_res.status_code == 200
+    assert me_res.json()["user"]["username"] == email

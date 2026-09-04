@@ -151,3 +151,42 @@ class RecoveryBrainOutput(BaseModel):
     @classmethod
     def round_confidence(cls, v: float) -> float:
         return round(v, 4)
+
+
+class DecisionContextEnvelope(BaseModel):
+    """Standardized, bounded AI Decision Context Envelope (Protocol v1.0).
+
+    Guarantees that every AI request contains explicit task identification,
+    verified facts, deterministic backend calculations, historical evidence,
+    and policy boundaries, while strictly excluding secrets and raw credentials.
+    """
+
+    protocolVersion: str = "1.0"
+    aiTask: str
+    endpoint: str
+    requestId: str
+    entityType: str
+    entityId: str
+    timestamp: str
+    verifiedFacts: dict[str, Any] = Field(default_factory=dict)
+    backendCalculations: dict[str, Any] = Field(default_factory=dict)
+    historicalEvidence: dict[str, Any] = Field(default_factory=dict)
+    policyConstraints: dict[str, Any] = Field(default_factory=dict)
+    economicContext: dict[str, Any] = Field(default_factory=dict)
+    temporalContext: dict[str, Any] = Field(default_factory=dict)
+    systemCapabilities: dict[str, Any] = Field(default_factory=dict)
+    previousRecoveryActions: list[dict[str, Any]] = Field(default_factory=list)
+    allowedActions: list[str] = Field(default_factory=list)
+    forbiddenActions: list[str] = Field(default_factory=list)
+    requiredOutput: dict[str, Any] = Field(default_factory=dict)
+
+
+class DecisionExplanationOutput(BaseModel):
+    """Structured explanation from Gemini for decision.explain endpoint."""
+
+    decision_id: str
+    explanation: str = Field(min_length=10, max_length=1000)
+    key_factors: list[str] = Field(default_factory=list)
+    policy_alignment: str = Field(default="Fully aligned with merchant policy.")
+    outcome_assessment: str | None = None
+    latency_ms: float | None = None

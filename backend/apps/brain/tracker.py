@@ -23,6 +23,7 @@ class GeminiUsageMetrics:
     gemini_output_tokens: int = 0
     gemini_total_tokens: int = 0
     last_latency_ms: float = 0.0
+    _recent_telemetry: list[dict[str, Any]] = field(default_factory=list, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def record_request(
@@ -39,6 +40,37 @@ class GeminiUsageMetrics:
             if isinstance(output_tokens, (int, float)) and output_tokens > 0:
                 self.gemini_output_tokens += int(output_tokens)
             self.gemini_total_tokens = self.gemini_input_tokens + self.gemini_output_tokens
+
+    def record_telemetry(
+        self,
+        request_id: str,
+        endpoint: str,
+        model: str,
+        latency_ms: float,
+        validation_status: str,
+        fallback_status: bool,
+        policy_verdict: str | None = None,
+        action: str | None = None,
+    ) -> None:
+        """Record bounded telemetry event without raw prompts or secrets."""
+        entry = {
+            "requestId": request_id,
+            "endpoint": endpoint,
+            "model": model,
+            "latencyMs": latency_ms,
+            "validationStatus": validation_status,
+            "fallbackStatus": fallback_status,
+            "policyVerdict": policy_verdict or "NOT_EVALUATED",
+            "action": action or "NONE",
+        }
+        with self._lock:
+            self._recent_telemetry.append(entry)
+            if len(self._recent_telemetry) > 25:
+                self._recent_telemetry.pop(0)
+
+    def get_recent_telemetry(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self._recent_telemetry)
 
     def record_skip(self) -> None:
         with self._lock:
@@ -68,6 +100,7 @@ class GeminiUsageMetrics:
                 "gemini_output_tokens": self.gemini_output_tokens,
                 "gemini_total_tokens": self.gemini_total_tokens,
                 "gemini_latency": self.last_latency_ms,
+                "recent_telemetry_count": len(self._recent_telemetry),
             }
 
     def reset(self) -> None:
@@ -81,6 +114,7 @@ class GeminiUsageMetrics:
             self.gemini_output_tokens = 0
             self.gemini_total_tokens = 0
             self.last_latency_ms = 0.0
+            self._recent_telemetry.clear()
 
 
 # Global singleton instance

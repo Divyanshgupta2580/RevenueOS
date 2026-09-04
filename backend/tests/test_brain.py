@@ -1,4 +1,4 @@
-"""Acceptance and Quality Assurance Tests for Recovery Brain (Gemini 3.8 Flash).
+"""Acceptance and Quality Assurance Tests for Recovery Brain (Gemini 3.6 Flash).
 
 Covers:
 1. Successful payment should not trigger recovery
@@ -406,7 +406,7 @@ def test_gemini_model_configuration_single_source_of_truth() -> None:
 
     from apps.brain.config import get_configured_gemini_model
 
-    test_model = "test-model-config"
+    test_model = "gemini-3.6-flash"
     with patch.object(settings, "GEMINI_MODEL", test_model):
         assert get_configured_gemini_model() == test_model
 
@@ -546,3 +546,104 @@ def test_observability_tracker_metrics() -> None:
     assert metrics["gemini_output_tokens"] == 75
     assert metrics["gemini_total_tokens"] == 395
     assert metrics["gemini_latency"] == 145.2
+
+
+@pytest.mark.asyncio
+async def test_explain_decision_async_approved() -> None:
+    """Requirement: explain_decision must explain approved decisions without contradicting policy."""
+    provider = GeminiProvider()
+    decision = {
+        "decision_id": "dec_exp_app_01",
+        "payment_id": "pay_exp_app_01",
+        "created_at": "2026-09-04T12:00:00Z",
+        "ai_recommendation": {
+            "action": "PAYMENT_LINK",
+            "confidence": 0.85,
+            "reason": "Soft decline resolvable via payment link.",
+            "supporting_factors": ["Soft decline", "No prior retries"],
+        },
+        "policy_decision": {
+            "status": "APPROVED",
+            "authorized_action": "PAYMENT_LINK",
+            "blocking_rule": None,
+            "rules_evaluated": [{"rule_name": "RETRY_LIMIT", "passed": True}],
+        },
+    }
+
+    # Test deterministic fallback explanation
+    explanation = provider.get_safe_explanation_fallback(decision)
+    assert explanation.decision_id == "dec_exp_app_01"
+    assert "APPROVED" in explanation.explanation
+    assert "PAYMENT_LINK" in explanation.explanation
+    assert len(explanation.key_factors) > 0
+
+
+@pytest.mark.asyncio
+async def test_explain_decision_async_blocked() -> None:
+    """Requirement: explain_decision must state the exact blocking rule when policy blocks an action."""
+    provider = GeminiProvider()
+    decision = {
+        "decision_id": "dec_exp_blk_01",
+        "payment_id": "pay_exp_blk_01",
+        "created_at": "2026-09-04T12:00:00Z",
+        "ai_recommendation": {
+            "action": "RETRY",
+            "confidence": 0.90,
+            "reason": "Network error, suggested retry.",
+        },
+        "policy_decision": {
+            "status": "BLOCKED",
+            "authorized_action": None,
+            "blocking_rule": "RETRY_LIMIT_EXCEEDED",
+            "blocking_reason": "Max retries reached (3/3). Further attempts prohibited.",
+            "rules_evaluated": [{"rule_name": "RETRY_LIMIT", "passed": False}],
+        },
+    }
+
+    explanation = provider.get_safe_explanation_fallback(decision)
+    assert explanation.decision_id == "dec_exp_blk_01"
+    assert "BLOCKED" in explanation.explanation
+    assert "RETRY_LIMIT_EXCEEDED" in explanation.explanation or "Max retries" in explanation.explanation
+
+
+def test_failure_behavior_malformed_json_fallback() -> None:
+    """Part 11: Malformed JSON from Gemini must fail safely into deterministic fallback."""
+    provider = GeminiProvider()
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "{ malformed json: not valid at all"
+    mock_client.models.generate_content.return_value = mock_response
+
+    input_ctx = RecoveryBrainInput(
+        payment_id="pay_fail_malformed",
+        amount_paise=100000,
+        failure_category="insufficient_funds",
+        retry_count=0,
+    )
+
+    with patch.object(provider, "_get_client", return_value=mock_client):
+        output = provider.generate_recommendation(input_ctx)
+        assert output.is_fallback is True
+        assert output.action in ["PAYMENT_LINK", "STOP", "RETRY", "REMINDER"]
+        assert "Model response validation error" in output.reason
+
+
+def test_failure_behavior_exception_fallback() -> None:
+    """Part 11: HTTP error, timeout, or service outage must fail safely into deterministic fallback."""
+    provider = GeminiProvider()
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = TimeoutError("Gateway timeout after 10000ms")
+
+    input_ctx = RecoveryBrainInput(
+        payment_id="pay_fail_timeout",
+        amount_paise=200000,
+        failure_category="network_error",
+        retry_count=0,
+    )
+
+    with patch.object(provider, "_get_client", return_value=mock_client):
+        output = provider.generate_recommendation(input_ctx)
+        assert output.is_fallback is True
+        assert output.action in ["RETRY", "PAYMENT_LINK", "REMINDER", "STOP"]
+        assert "Gemini service unavailable" in output.reason
+

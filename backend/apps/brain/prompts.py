@@ -1,6 +1,9 @@
 """Structured system instructions and decision prompts for Recovery Brain."""
 
-from apps.brain.schemas import RecoveryBrainInput
+import json
+from typing import Any
+
+from apps.brain.schemas import DecisionContextEnvelope, RecoveryBrainInput
 
 SYSTEM_INSTRUCTION = """You are the RevenueOS AI Recovery Brain, an expert decision engine for failed online payment recovery.
 
@@ -13,8 +16,54 @@ OPERATIONAL PRINCIPLES:
    - RETRY: Simulated Test Action for transient network faults where retries remain unexhausted and cooldown has elapsed.
    - STOP: Terminal policy action. Mandatory for fraud, stolen cards, hard declines, or exhausted retry limits.
 4. Economic Prudence: Prefer the safest eligible action with the strongest expected recovery value. If recovery is unsafe, unethical, or economically unwarranted, select STOP.
-5. Evidence Quality: Base confidence strictly on the freshness and strength of verified evidence, not certainty of wording.
+5. Evidence Quality: Base confidence strictly on the freshness and strength of verified evidence, not certainty of wording. If evidence is insufficient, select STOP with low confidence.
 6. Execution Truthfulness: You provide structured advisory recommendations. You do not charge cards, move balances, or execute transactions.
+"""
+
+EXPLANATION_SYSTEM_INSTRUCTION = """You are the RevenueOS Decision Explainability Engine.
+Your role is to explain concisely and transparently to merchant operators WHY a specific recovery decision was made or blocked, referencing verified facts, backend calculations, and deterministic policy rules.
+Do not invent facts. State clearly which rules governed the outcome.
+"""
+
+
+def build_envelope_prompt(env: DecisionContextEnvelope) -> str:
+    """Construct structured decision context prompt from standardized DecisionContextEnvelope."""
+    return f"""=== SYSTEM_ROLE ===
+RevenueOS Advisory Engine — Task: {env.aiTask} (Endpoint: {env.endpoint}, Request: {env.requestId})
+
+=== TASK ===
+Evaluate entity {env.entityType} '{env.entityId}' at {env.timestamp}.
+Select the bounded optimal recovery action, assess confidence from evidence quality, and output structured JSON.
+
+=== VERIFIED_FACTS ===
+{json.dumps(env.verifiedFacts, indent=2)}
+
+=== FACTS_CALCULATED_BY_BACKEND ===
+{json.dumps(env.backendCalculations, indent=2)}
+
+=== HISTORICAL_EVIDENCE ===
+{json.dumps(env.historicalEvidence, indent=2)}
+
+=== POLICY_CONSTRAINTS ===
+{json.dumps(env.policyConstraints, indent=2)}
+
+=== ECONOMIC_CONTEXT ===
+{json.dumps(env.economicContext, indent=2)}
+
+=== TEMPORAL_CONTEXT ===
+{json.dumps(env.temporalContext, indent=2)}
+
+=== SYSTEM_CAPABILITIES ===
+{json.dumps(env.systemCapabilities, indent=2)}
+
+=== ALLOWED_ACTIONS ===
+{json.dumps(env.allowedActions)}
+
+=== FORBIDDEN_ACTIONS ===
+{json.dumps(env.forbiddenActions)}
+
+=== OUTPUT_SCHEMA ===
+{json.dumps(env.requiredOutput, indent=2)}
 """
 
 
@@ -72,7 +121,15 @@ def build_analysis_prompt(ctx: RecoveryBrainInput) -> str:
         "STOP": True,
     }
 
-    return f"""=== 1. VERIFIED_FACTS ===
+    forbidden_actions = [k for k, v in eligibility.items() if not v]
+
+    return f"""=== SYSTEM_ROLE ===
+You are the RevenueOS AI Recovery Brain. Evaluate the verified facts and policy constraints below.
+
+=== TASK ===
+Select the optimal recovery action from eligible actions ({', '.join(k for k, v in eligibility.items() if v)}), assess confidence based on evidence quality, and identify key supporting and risk factors.
+
+=== VERIFIED_FACTS ===
 Payment ID: {payment_id}
 Amount: {amount_paise} paise ({amount_paise / 100:.2f} {currency})
 Status: {status} (Captured: {captured})
@@ -80,7 +137,7 @@ Payment Method: {method}
 Failure Code: {failure_code}
 Failure Description: {failure_desc}
 
-=== 2. FACTS_CALCULATED_BY_BACKEND ===
+=== FACTS_CALCULATED_BY_BACKEND ===
 Payment Age: {age_hours:.1f} hours
 Failure Category: {category}
 Retry Count: {retry_count} of {max_allowed} allowed
@@ -92,17 +149,79 @@ Estimated Recovery Probability: {est_prob:.2f}
 Cooldown Active: {cooldown_active} ({cooldown_secs}s remaining)
 Current Action Eligibility: {eligibility}
 
-=== 3. POLICY_CONSTRAINTS ===
+=== POLICY_CONSTRAINTS ===
 Maximum Retry Limit: {max_allowed}
 Cooldown Window: {cooldown_window}s
 Allowed Recovery Actions: {allowed_actions}
 Risk Rule: STOP mandatory on fraud, stolen cards, or closed accounts.
 
-=== 4. HISTORICAL_EVIDENCE ===
+=== HISTORICAL_EVIDENCE ===
 Customer ID: {cust_id}
 Customer Payment History: {cust_successes} successful, {cust_failures} failed (Success Rate: {cust_rate:.2f})
 Recovery Attempts for this Payment: {actions_attempted} (Last Action: {last_action or 'None'})
 
-=== 5. AI_TASK ===
-Evaluate the verified facts and policy constraints above. Select the optimal recovery action from eligible actions ({', '.join(k for k, v in eligibility.items() if v)}), assess confidence based on evidence quality, and identify key supporting and risk factors. Output strictly via the configured schema.
+=== ECONOMIC_CONTEXT ===
+Amount at Risk: {amount_paise} paise
+Expected Recovery Value: {erv_paise} paise
+Baseline Control: {baseline_control} paise
+
+=== TEMPORAL_CONTEXT ===
+Elapsed Duration: {age_hours:.1f} hours
+Cooldown Status: {'Active' if cooldown_active else 'Elapsed'}
+
+=== SYSTEM_CAPABILITIES ===
+Mode: Test Mode (Simulated retries, dynamic Razorpay Test payment links)
+
+=== ALLOWED_ACTIONS ===
+{[k for k, v in eligibility.items() if v]}
+
+=== FORBIDDEN_ACTIONS ===
+{forbidden_actions}
+
+=== OUTPUT_SCHEMA ===
+action: RETRY | PAYMENT_LINK | REMINDER | STOP
+confidence: float in [0.0, 1.0]
+expected_recovery_value_paise: integer paise
+reason: string explanation
+supporting_factors: list of strings
+risk_factors: list of strings
+"""
+
+
+def build_explanation_prompt(decision: dict[str, Any]) -> str:
+    """Construct prompt to explain an existing audit decision."""
+    did = decision.get("decision_id", "unknown")
+    pid = decision.get("payment_id", "unknown")
+    ai_rec = decision.get("ai_recommendation", {})
+    policy_dec = decision.get("policy_decision", {})
+
+    return f"""=== SYSTEM_ROLE ===
+RevenueOS Decision Explainability Engine
+
+=== TASK ===
+Explain why decision '{did}' for payment '{pid}' was evaluated as {policy_dec.get('status', 'EVALUATED')}.
+
+=== VERIFIED_FACTS ===
+Decision ID: {did}
+Payment ID: {pid}
+Created At: {decision.get('created_at')}
+
+=== AI_RECOMMENDATION ===
+Recommended Action: {ai_rec.get('action')}
+Confidence: {ai_rec.get('confidence')}
+Reason: {ai_rec.get('reason')}
+Supporting Factors: {ai_rec.get('supporting_factors', [])}
+
+=== POLICY_DECISION ===
+Status: {policy_dec.get('status')}
+Authorized Action: {policy_dec.get('authorized_action') or 'None'}
+Blocking Rule: {policy_dec.get('blocking_rule') or 'None'}
+Blocking Reason: {policy_dec.get('blocking_reason') or 'None'}
+Rules Evaluated: {policy_dec.get('rules_evaluated', [])}
+
+=== OUTPUT_SCHEMA ===
+decision_id: string
+explanation: clear human-readable narrative explanation
+key_factors: list of primary deciding factors
+policy_alignment: explanation of how policy rules governed the outcome
 """

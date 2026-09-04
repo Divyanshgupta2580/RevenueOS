@@ -36,6 +36,7 @@ ALLOWED_HOSTS = [
 # Application Definition
 # ------------------------------------------------------------------------------
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -129,6 +130,17 @@ WS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+# Ensure frontend and trusted origin hosts are permitted in ALLOWED_HOSTS for Channels origin validation
+for _origin in [FRONTEND_ORIGIN] + CSRF_TRUSTED_ORIGINS + WS_ALLOWED_ORIGINS:
+    try:
+        from urllib.parse import urlparse
+
+        _p_host = urlparse(_origin).hostname
+        if _p_host and _p_host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(_p_host)
+    except Exception:
+        pass
+
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax" if DEBUG else "None"
 SESSION_COOKIE_SECURE = not DEBUG
@@ -147,7 +159,7 @@ TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
 
 # Google Gemini API
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 # Razorpay Test Mode
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")

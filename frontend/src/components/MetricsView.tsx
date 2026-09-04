@@ -124,6 +124,8 @@ export default function MetricsView({ metrics }: MetricsViewProps) {
               </div>
             </div>
 
+
+
             <div className="p-4 rounded-lg bg-[#0e1117] border border-[#21262d]">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5 mb-3">
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
@@ -137,6 +139,97 @@ export default function MetricsView({ metrics }: MetricsViewProps) {
                 <Zap className="w-3.5 h-3.5 text-amber-400 inline mr-1" />
                 Policy Engine: 100% auditable rule validation on every action.
               </div>
+            </div>
+          </div>
+
+          {/* Strategy-Level Analysis */}
+          <div className="p-5 rounded-lg bg-[#0e1117] border border-[#21262d]">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-white tracking-tight">
+                  Strategy-Level Recovery Breakdown
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Performance across bounded intervention channels in Razorpay Test Mode.
+                </p>
+              </div>
+              <span className="text-[10px] font-mono text-zinc-500 uppercase px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800">
+                Sample size limited
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* PAYMENT_LINK */}
+              <div className="p-3.5 rounded-lg bg-[#070b16] border border-[#1b263b] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-blue-400">PAYMENT_LINK</span>
+                  <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-800/40">
+                    Primary
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-300">
+                  Generates direct Razorpay payment link with customized expiry and customer messaging.
+                </div>
+                <div className="pt-1 text-[11px] font-mono text-zinc-400 flex justify-between border-t border-zinc-800">
+                  <span>Channel:</span>
+                  <span className="text-zinc-200">Razorpay Link API</span>
+                </div>
+              </div>
+
+              {/* REMINDER */}
+              <div className="p-3.5 rounded-lg bg-[#070b16] border border-[#1b263b] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-amber-300">REMINDER</span>
+                  <span className="text-[9px] font-mono text-zinc-400 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
+                    Async
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-300">
+                  Dispatches smart schedule reminders to customer after cooldown window expires.
+                </div>
+                <div className="pt-1 text-[11px] font-mono text-zinc-400 flex justify-between border-t border-zinc-800">
+                  <span>Channel:</span>
+                  <span className="text-zinc-200">Email Notification</span>
+                </div>
+              </div>
+
+              {/* RETRY */}
+              <div className="p-3.5 rounded-lg bg-[#070b16] border border-[#1b263b] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-teal-300">RETRY</span>
+                  <span className="text-[9px] font-mono text-amber-400 bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-800/40">
+                    Simulated
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-300">
+                  Simulated test action for network transient errors. (Server-to-server card charges require explicit tokenization).
+                </div>
+                <div className="pt-1 text-[11px] font-mono text-zinc-400 flex justify-between border-t border-zinc-800">
+                  <span>Channel:</span>
+                  <span className="text-zinc-200">Simulated Action</span>
+                </div>
+              </div>
+
+              {/* STOP */}
+              <div className="p-3.5 rounded-lg bg-[#070b16] border border-[#1b263b] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-rose-400">STOP</span>
+                  <span className="text-[9px] font-mono text-rose-400 bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-800/40">
+                    Guard
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-300">
+                  Immediately halts recovery for fraud, hard card declines, or exhausted retry limits.
+                </div>
+                <div className="pt-1 text-[11px] font-mono text-zinc-400 flex justify-between border-t border-zinc-800">
+                  <span>Channel:</span>
+                  <span className="text-zinc-200">Policy Halt</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3 bg-zinc-900/50 rounded border border-zinc-800/80 text-[11px] text-zinc-500 leading-relaxed">
+              <strong>Statistical Significance Notice:</strong> Channel-level A/B attribution requires at least 250+ completed transactions per intervention channel. RevenueOS does not fabricate statistical significance on low sample sizes.
             </div>
           </div>
         </>

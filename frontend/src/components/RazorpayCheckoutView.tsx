@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CreditCard,
   CheckCircle2,
@@ -8,11 +8,24 @@ import {
   Loader2,
   ShieldCheck,
   ArrowRight,
-  RefreshCw,
+  Copy,
+  Check,
+  Info,
   ExternalLink,
+  ChevronDown,
 } from "lucide-react";
 import { launchRazorpayCheckout, VerifyPaymentResponse } from "@/lib/razorpay";
 import { formatPaiseToRupees } from "@/lib/format";
+
+interface VerifiedPaymentRecord {
+  payment_id: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  signature: string;
+  created_at?: string;
+}
 
 interface RazorpayCheckoutViewProps {
   initialAmountPaise?: number;
@@ -21,17 +34,23 @@ interface RazorpayCheckoutViewProps {
 }
 
 export default function RazorpayCheckoutView({
-  initialAmountPaise = 50000, // ₹500 default
+  initialAmountPaise = 10000, // ₹100 default
   initialPaymentId,
   onPaymentComplete,
 }: RazorpayCheckoutViewProps) {
   const [amountPaise, setAmountPaise] = useState<number>(initialAmountPaise);
   const [customerEmail, setCustomerEmail] = useState("operator@revenueos.local");
-  const [customerContact, setCustomerContact] = useState("9876543210");
+  const [customerContact, setCustomerContact] = useState("9999999999");
   const [notes, setNotes] = useState("Revenue recovery checkout via RevenueOS");
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copiedSignature, setCopiedSignature] = useState(false);
+  const [copiedPaymentId, setCopiedPaymentId] = useState(false);
+  const [copiedOrderId, setCopiedOrderId] = useState(false);
+  const [isMakingPayment, setIsMakingPayment] = useState(false);
+
+  // Success data from immediate checkout
   const [successData, setSuccessData] = useState<{
     payment_id: string;
     order_id: string;
@@ -39,6 +58,10 @@ export default function RazorpayCheckoutView({
     verification: VerifyPaymentResponse;
   } | null>(null);
 
+  // Latest verified payment from server history
+  const [latestPayment, setLatestPayment] = useState<VerifiedPaymentRecord | null>(null);
+
+  // Presets matching fintech defaults
   const presets = [
     { label: "₹1.00 (Min)", paise: 100 },
     { label: "₹100.00", paise: 10000 },
@@ -46,6 +69,19 @@ export default function RazorpayCheckoutView({
     { label: "₹1,500.00", paise: 150000 },
     { label: "₹4,999.00", paise: 499900 },
   ];
+
+  // Fetch recent verified payment on mount
+  useEffect(() => {
+    const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
+    fetch(`${apiOrigin}/api/verify-payment`, { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.status === "success" && data.payment) {
+          setLatestPayment(data.payment);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleCheckout = async () => {
     if (amountPaise < 100) {
@@ -71,8 +107,23 @@ export default function RazorpayCheckoutView({
           setLoading(false);
           setStatusMessage(null);
           setSuccessData(res);
+          setIsMakingPayment(false);
+
+          // Update latest payment state
+          setLatestPayment({
+            payment_id: res.payment_id,
+            order_id: res.order_id,
+            amount: amountPaise,
+            currency: "INR",
+            status: "captured",
+            signature: res.signature,
+            created_at: new Date().toISOString(),
+          });
+
           if (onPaymentComplete && initialPaymentId) {
             onPaymentComplete(initialPaymentId);
+          } else if (onPaymentComplete) {
+            onPaymentComplete(res.payment_id);
           }
         },
         onDismiss: () => {
@@ -97,92 +148,250 @@ export default function RazorpayCheckoutView({
     }
   };
 
-  const handleReset = () => {
-    setSuccessData(null);
-    setError(null);
-    setStatusMessage(null);
+  const handleCopy = (text: string, type: "signature" | "paymentId" | "orderId") => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      if (type === "signature") {
+        setCopiedSignature(true);
+        setTimeout(() => setCopiedSignature(false), 2000);
+      } else if (type === "paymentId") {
+        setCopiedPaymentId(true);
+        setTimeout(() => setCopiedPaymentId(false), 2000);
+      } else if (type === "orderId") {
+        setCopiedOrderId(true);
+        setTimeout(() => setCopiedOrderId(false), 2000);
+      }
+    }
   };
 
+  const handleCopySignature = (sig: string) => handleCopy(sig, "signature");
+
+  // Format date cleanly
+  const formatTxDate = (dateStr?: string) => {
+    try {
+      const date = dateStr ? new Date(dateStr) : new Date();
+      return date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    } catch {
+      return "Recent Transaction";
+    }
+  };
+
+  // Active verified transaction to display
+  const activeTx = successData
+    ? {
+        payment_id: successData.payment_id,
+        order_id: successData.order_id,
+        amount: amountPaise,
+        signature: successData.signature,
+        status: "VERIFIED & CAPTURED",
+        created_at: new Date().toISOString(),
+      }
+    : latestPayment
+    ? {
+        payment_id: latestPayment.payment_id,
+        order_id: latestPayment.order_id,
+        amount: latestPayment.amount,
+        signature: latestPayment.signature || "Verified via backend HMAC-SHA256 signature validation",
+        status: "VERIFIED & CAPTURED",
+        created_at: latestPayment.created_at,
+      }
+    : null;
+
+  // Show verified view if activeTx exists and user hasn't explicitly clicked "Make Another Payment"
+  const showVerifiedView = activeTx && !isMakingPayment;
+
   return (
-    <div className="max-w-3xl mx-auto py-6 px-4">
-      {/* Header Banner */}
-      <div className="bg-[#0e1117] border border-[#21262d] rounded-xl p-6 mb-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#21262d] pb-5">
+    <div className="w-full space-y-6">
+      {/* Central Razorpay Checkout Card */}
+      <div className="bg-[#091021] border border-[#1b263b] rounded-xl p-6 shadow-xl">
+        {/* Card Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#162033] pb-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
               <CreditCard className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                Razorpay Standard Web Checkout
-                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-blue-900/40 text-blue-300 border border-blue-700/50">
-                  Test Mode
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white tracking-tight">
+                  Razorpay Standard Web Checkout
+                </h2>
+                <span className="text-[10px] font-mono font-semibold uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  TEST MODE
                 </span>
-              </h2>
+              </div>
               <p className="text-xs text-zinc-400 mt-0.5">
                 Standard modal payment gateway integration with server-side HMAC-SHA256 signature verification.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-xs text-zinc-400 bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>HMAC-SHA256 Verified</span>
+          {/* HMAC Verified Badge */}
+          <div className="flex items-center gap-2.5 font-mono text-xs text-teal-400 bg-[#091723] px-3 py-1.5 rounded-lg border border-teal-500/30 shrink-0 cursor-default">
+            <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
+            <div className="text-left">
+              <div className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider leading-none">HMAC-SHA256</div>
+              <div className="text-xs font-semibold text-teal-300 mt-0.5">Verified</div>
+            </div>
+            <ChevronDown className="w-4 h-4 text-zinc-400 ml-1 shrink-0" />
           </div>
         </div>
 
-        {/* Success View */}
-        {successData ? (
-          <div className="mt-6 p-6 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-emerald-200">
-            <div className="flex items-center gap-2.5 text-emerald-400 text-base font-semibold mb-2">
-              <CheckCircle2 className="w-5 h-5" />
-              Payment Verified & Captured Successfully!
+        {/* State A: Verified & Captured Success State */}
+        {showVerifiedView ? (
+          <div className="mt-6 space-y-5 animate-in fade-in duration-200">
+            {/* Success Alert Banner */}
+            <div className="p-4 rounded-xl bg-[#092224] border border-teal-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-teal-400 shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-white">
+                    Payment Verified &amp; Captured Successfully!
+                  </div>
+                  <div className="text-xs text-teal-300/80 mt-0.5">
+                    The payment signature was verified on the backend and the transaction was recorded successfully.
+                  </div>
+                </div>
+              </div>
+              <div className="text-left sm:text-right shrink-0">
+                <div className="text-xs font-mono text-zinc-300">
+                  {formatTxDate(activeTx.created_at)}
+                </div>
+                <div className="text-[10px] font-mono text-teal-400 mt-0.5">
+                  Test Mode Transaction
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-emerald-300/80 mb-5">
-              The payment signature was verified on the backend via HMAC-SHA256(order_id + &quot;|&quot; + payment_id, KEY_SECRET).
-            </p>
 
-            <div className="bg-black/40 rounded-lg p-4 font-mono text-xs space-y-2 border border-emerald-500/20 text-zinc-300">
-              <div className="flex justify-between border-b border-zinc-800 pb-2">
-                <span className="text-zinc-500">Status:</span>
-                <span className="text-emerald-400 font-bold">VERIFIED &amp; CAPTURED</span>
-              </div>
-              <div className="flex justify-between border-b border-zinc-800 pb-2">
-                <span className="text-zinc-500">Amount Paid:</span>
-                <span className="text-white font-bold">{formatPaiseToRupees(amountPaise)}</span>
-              </div>
-              <div className="flex justify-between border-b border-zinc-800 pb-2">
-                <span className="text-zinc-500">Razorpay Payment ID:</span>
-                <span className="text-zinc-200">{successData.payment_id}</span>
-              </div>
-              <div className="flex justify-between border-b border-zinc-800 pb-2">
-                <span className="text-zinc-500">Razorpay Order ID:</span>
-                <span className="text-zinc-200">{successData.order_id}</span>
-              </div>
-              <div className="flex flex-col gap-1 pt-1">
-                <span className="text-zinc-500">HMAC-SHA256 Signature:</span>
-                <span className="text-zinc-400 break-all text-[11px] bg-zinc-950 p-2 rounded border border-zinc-800">
-                  {successData.signature}
+            {/* Transaction Details Container */}
+            <div className="bg-[#070b16] rounded-xl p-5 border border-[#162033]">
+              <div className="flex items-center justify-between border-b border-[#141d30] pb-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">
+                    Transaction Details
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Verified payment information from Razorpay
+                  </p>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/50 text-emerald-400 font-bold text-[10px]">
+                  VERIFIED &amp; CAPTURED
                 </span>
               </div>
+
+              <div className="space-y-3 font-mono text-xs">
+                {/* Status */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1.5 border-b border-[#141d30]">
+                  <span className="text-zinc-400 font-sans">Status</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/50 text-emerald-400 font-bold text-[10px] w-fit">
+                    VERIFIED &amp; CAPTURED
+                  </span>
+                </div>
+
+                {/* Amount Paid */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1.5 border-b border-[#141d30]">
+                  <span className="text-zinc-400 font-sans">Amount Paid</span>
+                  <span className="text-white font-bold text-sm">
+                    {formatPaiseToRupees(activeTx.amount)}
+                  </span>
+                </div>
+
+                {/* Payment ID */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1.5 border-b border-[#141d30] min-w-0">
+                  <span className="text-zinc-400 font-sans">Razorpay Payment ID</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-200 break-all min-w-0">{activeTx.payment_id}</span>
+                    <button
+                      onClick={() => handleCopy(activeTx.payment_id, "paymentId")}
+                      title={copiedPaymentId ? "Copied!" : "Copy Payment ID"}
+                      aria-label="Copy Payment ID"
+                      className="p-1 text-zinc-400 hover:text-white rounded hover:bg-[#121c2d] transition-colors shrink-0"
+                    >
+                      {copiedPaymentId ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Order ID */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1.5 border-b border-[#141d30] min-w-0">
+                  <span className="text-zinc-400 font-sans">Razorpay Order ID</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-200 break-all min-w-0">{activeTx.order_id}</span>
+                    <button
+                      onClick={() => handleCopy(activeTx.order_id, "orderId")}
+                      title={copiedOrderId ? "Copied!" : "Copy Order ID"}
+                      aria-label="Copy Order ID"
+                      className="p-1 text-zinc-400 hover:text-white rounded hover:bg-[#121c2d] transition-colors shrink-0"
+                    >
+                      {copiedOrderId ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* HMAC-SHA256 Signature */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1.5 min-w-0">
+                  <span className="text-zinc-400 font-sans shrink-0">HMAC-SHA256 Signature</span>
+                  <div className="flex items-center gap-2 bg-[#050812] border border-[#162133] rounded-lg px-3 py-2 text-[11px] text-zinc-400 w-full sm:max-w-xl min-w-0 justify-between overflow-hidden">
+                    <span className="truncate font-mono select-all min-w-0">
+                      {activeTx.signature}
+                    </span>
+                    <button
+                      onClick={() => handleCopySignature(activeTx.signature)}
+                      title={copiedSignature ? "Copied!" : "Copy signature"}
+                      aria-label="Copy signature"
+                      className="p-1 text-zinc-400 hover:text-white rounded hover:bg-[#121c2d] transition-colors shrink-0 ml-1"
+                    >
+                      {copiedSignature ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="mt-5 flex gap-3">
+            {/* Bottom Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
               <button
-                onClick={handleReset}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                onClick={() => setIsMakingPayment(true)}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors shadow-md shadow-blue-900/30 w-fit"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Make Another Payment
+                <CreditCard className="w-4 h-4" />
+                <span>Make Another Payment</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
+
+              <div className="flex items-center gap-2 text-xs text-zinc-400">
+                <Info className="w-4 h-4 text-blue-400 shrink-0" />
+                <span>This is a test transaction. No real money has been charged.</span>
+              </div>
             </div>
           </div>
         ) : (
-          /* Checkout Form */
-          <div className="mt-6 space-y-6">
+          /* State B: Interactive Checkout Form */
+          <div className="mt-6 space-y-6 animate-in fade-in duration-200">
             {/* Amount Selection */}
             <div>
-              <label className="block text-xs font-mono uppercase text-zinc-400 mb-2">
+              <label className="block text-xs font-mono uppercase tracking-wider text-zinc-400 mb-2 font-medium">
                 Select Amount (INR)
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
@@ -193,8 +402,8 @@ export default function RazorpayCheckoutView({
                     onClick={() => setAmountPaise(p.paise)}
                     className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all ${
                       amountPaise === p.paise
-                        ? "bg-amber-500 text-black font-bold shadow-md shadow-amber-500/20"
-                        : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800"
+                        ? "bg-blue-600 text-white font-bold shadow-md shadow-blue-900/40 border border-blue-400"
+                        : "bg-[#0c1424] hover:bg-[#111c33] text-zinc-300 border border-[#1b263b]"
                     }`}
                   >
                     {p.label}
@@ -203,16 +412,16 @@ export default function RazorpayCheckoutView({
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-sm font-mono text-zinc-400">Custom Paise:</span>
+                <span className="text-xs font-mono text-zinc-400">Custom Paise:</span>
                 <input
                   type="number"
                   min="100"
                   step="100"
                   value={amountPaise}
                   onChange={(e) => setAmountPaise(Math.max(100, parseInt(e.target.value) || 100))}
-                  className="bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs font-mono text-white w-40 focus:outline-none focus:border-amber-500"
+                  className="bg-[#0c1424] border border-[#1b263b] rounded px-3 py-1.5 text-xs font-mono text-white w-36 focus:outline-none focus:border-blue-500"
                 />
-                <span className="text-xs font-mono text-amber-400 font-bold">
+                <span className="text-xs font-mono text-blue-400 font-bold">
                   = {formatPaiseToRupees(amountPaise)}
                 </span>
               </div>
@@ -228,7 +437,7 @@ export default function RazorpayCheckoutView({
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+                  className="w-full bg-[#0c1424] border border-[#1b263b] rounded px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-blue-500 font-mono"
                   placeholder="customer@example.com"
                 />
               </div>
@@ -240,7 +449,7 @@ export default function RazorpayCheckoutView({
                   type="tel"
                   value={customerContact}
                   onChange={(e) => setCustomerContact(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+                  className="w-full bg-[#0c1424] border border-[#1b263b] rounded px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-blue-500 font-mono"
                   placeholder="9876543210"
                 />
               </div>
@@ -255,15 +464,15 @@ export default function RazorpayCheckoutView({
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+                className="w-full bg-[#0c1424] border border-[#1b263b] rounded px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-blue-500"
                 placeholder="Recovery description or payment note"
               />
             </div>
 
             {/* Status / Error feedback */}
             {statusMessage && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-300 text-xs flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
                 {statusMessage}
               </div>
             )}
@@ -279,58 +488,71 @@ export default function RazorpayCheckoutView({
             )}
 
             {/* Pay Button */}
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-4">
               <button
                 type="button"
                 onClick={handleCheckout}
                 disabled={loading}
-                className="w-full py-3 px-6 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black font-bold text-sm tracking-wide transition-all shadow-lg shadow-amber-500/10 hover:shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="py-3 px-6 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold text-xs tracking-wide transition-all shadow-lg shadow-blue-900/30 disabled:opacity-50 flex items-center justify-center gap-2 w-full sm:w-auto"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-black" />
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
                     <span>Processing with Razorpay...</span>
                   </>
                 ) : (
                   <>
+                    <CreditCard className="w-4 h-4" />
                     <span>Pay {formatPaiseToRupees(amountPaise)} with Razorpay</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
-              <p className="text-[11px] text-zinc-500 text-center mt-2">
-                Opens the standard Razorpay checkout modal with test card / UPI support.
-              </p>
+
+              {activeTx && (
+                <button
+                  type="button"
+                  onClick={() => setIsMakingPayment(false)}
+                  className="text-xs text-zinc-400 hover:text-zinc-200 underline transition-colors"
+                >
+                  View Last Verified Transaction
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] text-zinc-500 pt-1">
+              <Info className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>Opens the standard Razorpay checkout modal with test card / UPI support. No real money will be charged.</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Integration Reference card */}
-      <div className="bg-[#0e1117]/60 border border-[#21262d] rounded-xl p-5 text-xs text-zinc-400">
+      {/* Integration Reference Card */}
+      <div className="bg-[#091021]/60 border border-[#1b263b] rounded-xl p-5 text-xs text-zinc-400">
         <h4 className="font-semibold text-zinc-300 mb-2 flex items-center gap-2">
           <span>Standard Checkout Architecture Flow</span>
           <ExternalLink className="w-3.5 h-3.5 text-zinc-500" />
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-          <div className="bg-zinc-950/70 p-3 rounded-lg border border-zinc-800">
-            <span className="font-mono text-amber-400 font-bold text-[11px] block mb-1">
+          <div className="bg-[#070b16] p-3 rounded-lg border border-[#162033]">
+            <span className="font-mono text-blue-400 font-bold text-[11px] block mb-1">
               1. Create Order
             </span>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
               Frontend calls backend <code className="text-zinc-300">POST /api/create-order</code> with amount &ge; 100 paise. Backend calls Razorpay orders API.
             </p>
           </div>
-          <div className="bg-zinc-950/70 p-3 rounded-lg border border-zinc-800">
-            <span className="font-mono text-blue-400 font-bold text-[11px] block mb-1">
+          <div className="bg-[#070b16] p-3 rounded-lg border border-[#162033]">
+            <span className="font-mono text-amber-400 font-bold text-[11px] block mb-1">
               2. Open Modal
             </span>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
               Opens <code className="text-zinc-300">checkout.js</code> modal with <code className="text-zinc-300">order_id</code> and public key. Handles dismissal &amp; failure callbacks.
             </p>
           </div>
-          <div className="bg-zinc-950/70 p-3 rounded-lg border border-zinc-800">
-            <span className="font-mono text-emerald-400 font-bold text-[11px] block mb-1">
+          <div className="bg-[#070b16] p-3 rounded-lg border border-[#162033]">
+            <span className="font-mono text-teal-400 font-bold text-[11px] block mb-1">
               3. Verify HMAC
             </span>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
