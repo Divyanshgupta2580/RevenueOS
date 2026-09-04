@@ -137,17 +137,6 @@ export class RevenueWebSocketClient {
     };
   }
 
-  public dispatchServerMessage(message: ServerMessage): void {
-    const typeListeners = this.listeners.get(message.type);
-    if (typeListeners) {
-      typeListeners.forEach((handler) => handler(message));
-    }
-    const wildcardListeners = this.listeners.get("*");
-    if (wildcardListeners) {
-      wildcardListeners.forEach((handler) => handler(message));
-    }
-  }
-
   /**
    * Send an RPC command and await correlated response.
    */
@@ -200,6 +189,13 @@ export class RevenueWebSocketClient {
       payload,
     };
     this.ws.send(JSON.stringify(message));
+  }
+
+  /**
+   * Dispatch a simulated server message directly to listeners (useful for testing and offline mocks).
+   */
+  public dispatchServerMessage(message: ServerMessage): void {
+    this.handleMessage(new MessageEvent("message", { data: JSON.stringify(message) }));
   }
 
   private handleOpen(): void {

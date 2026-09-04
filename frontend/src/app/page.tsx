@@ -17,6 +17,7 @@ import type {
   MetricSummary,
   Opportunity,
   PolicyVerdict,
+  RuleEvaluation,
   ServerMessage,
   UserContext,
 } from "@/lib/types";
@@ -181,7 +182,7 @@ export default function CommandCenterPage() {
     paymentId: string,
     action: string,
     recommendation?: BrainRecommendation
-  ): Promise<{ status: string; verdict?: PolicyVerdict; result?: Record<string, unknown> } | null> => {
+  ): Promise<{ status: string; verdict?: PolicyVerdict; result?: Record<string, unknown>; decisionId?: string } | null> => {
     try {
       const resp = await request<
         { paymentId: string; action: string; aiRecommendation?: BrainRecommendation },
@@ -194,20 +195,22 @@ export default function CommandCenterPage() {
 
       const msgType = resp.type;
       const payload = resp.payload || {};
+      const rawVerdict = payload.verdict as PolicyVerdict | undefined;
+      const decId = (payload.decisionId as string) || `dec_${Date.now()}`;
 
       if (msgType === "recovery.blocked") {
         const verdict: PolicyVerdict = {
           status: "BLOCKED",
-          blockingRule: (payload.blockingRule as string) || "POLICY_RULE",
-          blockingReason: (payload.blockingReason as string) || "Action blocked by policy.",
-          rulesEvaluated: [],
-          evaluatedAt: new Date().toISOString(),
+          blockingRule: (payload.blockingRule as string) || rawVerdict?.blockingRule || "POLICY_RULE",
+          blockingReason: (payload.blockingReason as string) || rawVerdict?.blockingReason || "Action blocked by policy.",
+          rulesEvaluated: (payload.rulesEvaluated as RuleEvaluation[]) || rawVerdict?.rulesEvaluated || [],
+          evaluatedAt: rawVerdict?.evaluatedAt || new Date().toISOString(),
         };
         setDecisions((prev) => [
           {
-            decisionId: (payload.decisionId as string) || `dec_${Date.now()}`,
+            decisionId: decId,
             paymentId,
-            modelVersion: (payload.modelVersion as string) || "Guarded Decision Engine",
+            modelVersion: (payload.modelVersion as string) || "gemini-3.6-flash",
             aiRecommendation: recommendation || {
               action: "RETRY",
               confidence: 0.8,
@@ -222,22 +225,24 @@ export default function CommandCenterPage() {
           },
           ...prev,
         ]);
-        return { status: "BLOCKED", verdict };
+        return { status: "BLOCKED", verdict, result: payload, decisionId: decId };
       }
 
       // Approved / Executed
       const verdict: PolicyVerdict = {
         status: "APPROVED",
         authorizedAction: action,
-        rulesEvaluated: [],
-        evaluatedAt: new Date().toISOString(),
+        blockingRule: null,
+        blockingReason: null,
+        rulesEvaluated: (payload.rulesEvaluated as RuleEvaluation[]) || rawVerdict?.rulesEvaluated || [],
+        evaluatedAt: rawVerdict?.evaluatedAt || new Date().toISOString(),
       };
 
       setDecisions((prev) => [
         {
-          decisionId: (payload.decisionId as string) || `dec_${Date.now()}`,
+          decisionId: decId,
           paymentId,
-          modelVersion: (payload.modelVersion as string) || "Guarded Decision Engine",
+          modelVersion: (payload.modelVersion as string) || "gemini-3.6-flash",
           aiRecommendation: recommendation || {
             action: action as "RETRY" | "PAYMENT_LINK" | "REMINDER" | "STOP",
             confidence: 0.9,
@@ -254,7 +259,7 @@ export default function CommandCenterPage() {
       ]);
 
       refreshData();
-      return { status: "APPROVED", verdict, result: payload };
+      return { status: "APPROVED", verdict, result: payload, decisionId: decId };
     } catch {
       return { status: "ERROR" };
     }
@@ -362,6 +367,8 @@ export default function CommandCenterPage() {
           onClose={() => setSelectedOpp(null)}
           onAnalyze={handleAnalyzeOpportunity}
           onExecute={handleExecuteOpportunity}
+          onExplain={handleExplainDecision}
+          decisions={decisions}
           onInspectDecision={() => {
             setSelectedOpp(null);
             setActiveTab("ledger");

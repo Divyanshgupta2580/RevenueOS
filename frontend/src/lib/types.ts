@@ -87,6 +87,43 @@ export interface MetricSummary {
   sampleSizeHonestNote?: string;
 }
 
+export interface EvidenceSummary {
+  verifiedFacts: {
+    status: string;
+    amount: string;
+    currency: string;
+    failureCategory: string;
+    failureReason: string;
+    paymentMethod: string;
+    captured: boolean;
+  };
+  backendCalculations: {
+    recoverabilityScore: number;
+    expectedRecoveryPaise: number;
+    formattedERV: string;
+    estimatedProbability: number;
+    paymentAge: string;
+  };
+  historicalEvidence: {
+    customerId: string;
+    customerSuccessfulPayments: number;
+    customerFailedPayments: number;
+    recoveryAttempts: number;
+  };
+  policyConstraints: {
+    maxRetries: number;
+    cooldownSeconds: number;
+    allowedActions: string[];
+    maxAmountPaise: number;
+  };
+  systemState: {
+    isTestMode: boolean;
+    duplicateProtectionActive: boolean;
+    paymentLinkApiAvailable: boolean;
+    simulatedRetryAvailable: boolean;
+  };
+}
+
 export interface Opportunity {
   paymentId: string;
   orderId?: string;
@@ -112,6 +149,10 @@ export interface Opportunity {
   policyStatus?: "APPROVED" | "BLOCKED";
   policyReason?: string;
   recoveryStatus: string;
+  decisionId?: string;
+  rulesEvaluated?: RuleEvaluation[];
+  policyVerdict?: PolicyVerdict;
+  evidenceSummary?: EvidenceSummary;
   createdAt: string;
   updatedAt?: string;
 }
@@ -124,6 +165,7 @@ export interface BrainRecommendation {
   supportingFactors: string[];
   riskFactors: string[];
   reasoningSummary: string;
+  latency_ms?: number;
 }
 
 export interface RuleEvaluation {
@@ -148,4 +190,18 @@ export interface DecisionRecord {
   aiRecommendation: BrainRecommendation;
   policyDecision: PolicyVerdict;
   createdAt: string;
+}
+
+export interface ExplanationData {
+  decision_id?: string;
+  explanation?: string;
+  key_factors?: string[];
+  policy_alignment?: string;
+  outcome_assessment?: string;
+  latency_ms?: number;
+  summary?: string;
+  decisionFactors?: string[];
+  counterfactuals?: string[];
+  policyAlignment?: string;
+  confidenceAssessment?: string;
 }

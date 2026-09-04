@@ -57,6 +57,8 @@ class GuardedPolicyEngine:
         Evaluation short-circuits to BLOCKED upon the first failing rule.
         """
         rules_evaluated: list[dict[str, Any]] = []
+        first_blocking_rule: str | None = None
+        first_blocking_reason: str | None = None
 
         # Sequence of checks
         checks: list[tuple[str, PolicyEvaluationResult]] = [
@@ -67,35 +69,40 @@ class GuardedPolicyEngine:
 
         for rule_name, res in checks:
             rules_evaluated.append(res.to_dict())
-            if not res.passed:
-                return PolicyVerdict(
-                    status="BLOCKED",
-                    authorized_action=None,
-                    rules_evaluated=rules_evaluated,
-                    blocking_rule=rule_name,
-                    blocking_reason=res.reason,
-                )
+            if not res.passed and first_blocking_rule is None:
+                first_blocking_rule = rule_name
+                first_blocking_reason = res.reason
 
-        assert payment is not None  # Guaranteed by PAYMENT_ELIGIBILITY passing
+        if payment is not None:
+            subsequent_checks: list[tuple[str, PolicyEvaluationResult]] = [
+                ("ALREADY_RECOVERED", check_already_recovered(payment)),
+                ("AMOUNT_VALIDITY", check_amount_validity(payment)),
+                ("RETRY_THRESHOLD", check_retry_threshold(payment, action)),
+                ("RISK_POLICY", check_risk_policy(payment, action)),
+                ("DUPLICATE_EXECUTION", check_duplicate_execution(idempotency_key)),
+            ]
 
-        subsequent_checks: list[tuple[str, PolicyEvaluationResult]] = [
-            ("ALREADY_RECOVERED", check_already_recovered(payment)),
-            ("AMOUNT_VALIDITY", check_amount_validity(payment)),
-            ("RETRY_THRESHOLD", check_retry_threshold(payment, action)),
-            ("RISK_POLICY", check_risk_policy(payment, action)),
-            ("DUPLICATE_EXECUTION", check_duplicate_execution(idempotency_key)),
-        ]
+            for rule_name, res in subsequent_checks:
+                rules_evaluated.append(res.to_dict())
+                if not res.passed and first_blocking_rule is None:
+                    first_blocking_rule = rule_name
+                    first_blocking_reason = res.reason
+        else:
+            for unev in ["ALREADY_RECOVERED", "AMOUNT_VALIDITY", "RETRY_THRESHOLD", "RISK_POLICY", "DUPLICATE_EXECUTION"]:
+                rules_evaluated.append({
+                    "ruleName": unev,
+                    "passed": False,
+                    "reason": "Payment record required for evaluation."
+                })
 
-        for rule_name, res in subsequent_checks:
-            rules_evaluated.append(res.to_dict())
-            if not res.passed:
-                return PolicyVerdict(
-                    status="BLOCKED",
-                    authorized_action=None,
-                    rules_evaluated=rules_evaluated,
-                    blocking_rule=rule_name,
-                    blocking_reason=res.reason,
-                )
+        if first_blocking_rule is not None:
+            return PolicyVerdict(
+                status="BLOCKED",
+                authorized_action=None,
+                rules_evaluated=rules_evaluated,
+                blocking_rule=first_blocking_rule,
+                blocking_reason=first_blocking_reason,
+            )
 
         # All deterministic rules passed: action is authorized
         return PolicyVerdict(

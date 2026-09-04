@@ -408,6 +408,7 @@ class RecoveryBrainService:
         output = await self.provider.generate_recommendation_async(input_ctx)
 
         total_latency = round((time.perf_counter() - t0) * 1000, 2)
+        output.latency_ms = total_latency
         logger.info(
             "Recovery Brain analysis completed for payment %s: action=%s, confidence=%.2f, prep=%.1fms, total=%.1fms",
             input_ctx.payment_id,

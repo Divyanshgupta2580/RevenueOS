@@ -112,15 +112,22 @@ class RevenueRadarService:
         is_terminal = category in ["fraud", "lost_stolen_card", "card_expired", "account_closed"]
         if is_terminal or retry_count >= max_retries or rec_status in ["recovered", "abandoned"]:
             next_action = "STOP"
-            policy_status = "BLOCKED"
-            if is_terminal:
-                policy_reason = f"Terminal decline '{category}' blocked by anti-fraud policy"
-            elif retry_count >= max_retries:
-                policy_reason = f"Retry ceiling reached ({retry_count}/{max_retries})"
-            else:
-                policy_reason = "Transaction already settled or abandoned"
         else:
             next_action = action
+
+        from apps.policy.engine import GuardedPolicyEngine
+        candidate_action = next_action if next_action in ["RETRY", "PAYMENT_LINK", "REMINDER"] else "PAYMENT_LINK"
+        preview_verdict = GuardedPolicyEngine.evaluate(
+            payment=payment,
+            action=candidate_action,
+            user={"id": "operator", "username": "operator", "role": "operator"},
+            idempotency_key=f"preview_{payment_id}_{candidate_action}",
+        )
+
+        if preview_verdict.status == "BLOCKED":
+            policy_status = "BLOCKED"
+            policy_reason = preview_verdict.blocking_reason or "Blocked by policy"
+        else:
             policy_status = "APPROVED"
             policy_reason = f"Action {action} conforms to merchant recovery limits"
 
@@ -152,6 +159,44 @@ class RevenueRadarService:
             "policyReason": policy_reason,
             "priority": priority,
             "factors": factors,
+            "policyVerdict": preview_verdict.to_dict(),
+            "rulesEvaluated": preview_verdict.rules_evaluated,
+            "evidenceSummary": {
+                "verifiedFacts": {
+                    "status": str(payment.get("status", "failed")).upper(),
+                    "amount": format_paise_to_inr_string(amount_paise),
+                    "currency": payment.get("currency", "INR"),
+                    "failureCategory": category,
+                    "failureReason": str(payment.get("failure_reason") or category),
+                    "paymentMethod": str(payment.get("method") or "card"),
+                    "captured": bool(payment.get("captured", False)),
+                },
+                "backendCalculations": {
+                    "recoverabilityScore": score,
+                    "expectedRecoveryPaise": erv_paise,
+                    "formattedERV": format_paise_to_inr_string(erv_paise),
+                    "estimatedProbability": round(score / 100.0, 2),
+                    "paymentAge": payment_age,
+                },
+                "historicalEvidence": {
+                    "customerId": customer_masked,
+                    "customerSuccessfulPayments": 0,
+                    "customerFailedPayments": 1,
+                    "recoveryAttempts": retry_count,
+                },
+                "policyConstraints": {
+                    "maxRetries": max_retries,
+                    "cooldownSeconds": 300,
+                    "allowedActions": ["RETRY", "PAYMENT_LINK", "REMINDER", "STOP"],
+                    "maxAmountPaise": 100_000_000,
+                },
+                "systemState": {
+                    "isTestMode": True,
+                    "duplicateProtectionActive": True,
+                    "paymentLinkApiAvailable": True,
+                    "simulatedRetryAvailable": True,
+                },
+            },
             "createdAt": payment.get("created_at", now).isoformat() if hasattr(payment.get("created_at"), "isoformat") else str(payment.get("created_at")),
             "updatedAt": payment.get("updated_at", now).isoformat() if hasattr(payment.get("updated_at"), "isoformat") else str(payment.get("updated_at")),
         }
