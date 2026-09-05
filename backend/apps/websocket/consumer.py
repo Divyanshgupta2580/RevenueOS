@@ -44,7 +44,13 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             origin = headers.get(b"origin", b"").decode("utf-8")
             if origin:
                 allowed = getattr(settings, "WS_ALLOWED_ORIGINS", [])
-                if allowed and not any(origin.startswith(ao) for ao in allowed):
+                is_permitted = any(
+                    origin == ao
+                    or origin.startswith(ao)
+                    or (origin.startswith("https://") and origin.endswith(".vercel.app"))
+                    for ao in allowed
+                )
+                if allowed and not is_permitted:
                     logger.warning(f"Rejected WebSocket connection from untrusted origin: {origin}")
                     await self.close(code=4403)
                     return

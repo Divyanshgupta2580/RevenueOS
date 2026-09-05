@@ -203,21 +203,29 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "https://revenue-os-woad.vercel.app")
 WS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
         "WS_ALLOWED_ORIGINS",
-        f"{FRONTEND_ORIGIN},https://revenueos.vercel.app,http://localhost:3000,http://127.0.0.1:3000",
+        f"{FRONTEND_ORIGIN},https://revenue-os-woad.vercel.app,https://revenueos.vercel.app,http://localhost:3000,http://127.0.0.1:3000",
     ).split(",")
     if origin.strip()
 ]
 
-# Ensure canonical Vercel production origin is permitted for WebSocket and CSRF
-if "https://revenueos.vercel.app" not in WS_ALLOWED_ORIGINS:
-    WS_ALLOWED_ORIGINS.append("https://revenueos.vercel.app")
-if "https://revenueos.vercel.app" not in CSRF_TRUSTED_ORIGINS:
-    CSRF_TRUSTED_ORIGINS.append("https://revenueos.vercel.app")
+# Ensure canonical Vercel production origins are permitted for WebSocket and CSRF
+_canonical_vercel_origins = [
+    "https://revenue-os-woad.vercel.app",
+    "https://revenueos.vercel.app",
+]
+for _v_origin in _canonical_vercel_origins:
+    if _v_origin not in WS_ALLOWED_ORIGINS:
+        WS_ALLOWED_ORIGINS.append(_v_origin)
+    if _v_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_v_origin)
+
+if "https://*.vercel.app" not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append("https://*.vercel.app")
 
 # Automatically include Render external origin in CSRF_TRUSTED_ORIGINS if deployed on Render
 _render_host_origin = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
@@ -227,6 +235,11 @@ if _render_host_origin:
         _render_origin = f"https://{_clean_host}"
         if _render_origin not in CSRF_TRUSTED_ORIGINS:
             CSRF_TRUSTED_ORIGINS.append(_render_origin)
+
+# Ensure Vercel domains and hosts are permitted in ALLOWED_HOSTS for Channels origin validation
+for _v_host in [".vercel.app", "revenue-os-woad.vercel.app", "revenueos.vercel.app"]:
+    if _v_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_v_host)
 
 # Ensure frontend and trusted origin hosts are permitted in ALLOWED_HOSTS for Channels origin validation
 for _origin in [FRONTEND_ORIGIN] + CSRF_TRUSTED_ORIGINS + WS_ALLOWED_ORIGINS:

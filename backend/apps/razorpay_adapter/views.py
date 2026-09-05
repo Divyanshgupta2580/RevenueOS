@@ -20,10 +20,14 @@ from apps.razorpay_adapter.exceptions import (
 logger = logging.getLogger("revenueos.razorpay")
 
 
-def _cors_response(response: HttpResponse) -> HttpResponse:
+def _cors_response(response: HttpResponse, request: HttpRequest | None = None) -> HttpResponse:
     """Attach permissive CORS headers for local and cross-origin frontend clients."""
-    origin = getattr(settings, "FRONTEND_ORIGIN", "*") or "*"
-    response["Access-Control-Allow-Origin"] = origin if origin != "*" else "*"
+    origin = None
+    if request:
+        origin = request.META.get("HTTP_ORIGIN")
+    if not origin:
+        origin = getattr(settings, "FRONTEND_ORIGIN", "https://revenue-os-woad.vercel.app")
+    response["Access-Control-Allow-Origin"] = origin
     response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
     response["Access-Control-Allow-Credentials"] = "true"
@@ -39,37 +43,40 @@ def create_order_view(request: HttpRequest) -> HttpResponse:
     Returns:
         JSON: { "order_id": "...", "amount": 50000, "currency": "INR", "key_id": "..." }
     """
+    def cors(res: HttpResponse) -> HttpResponse:
+        return _cors_response(res, request)
+
     if request.method == "OPTIONS":
-        return _cors_response(HttpResponse(status=200))
+        return cors(HttpResponse(status=200))
 
     if request.method != "POST":
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "METHOD_NOT_ALLOWED", "message": "Only POST requests are permitted."}, status=405)
         )
 
     try:
         body = json.loads(request.body.decode("utf-8")) if request.body else {}
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "MALFORMED_JSON", "message": "Request body must be valid JSON."}, status=400)
         )
 
     raw_amount = body.get("amount")
     if raw_amount is None:
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "MISSING_AMOUNT", "message": "The 'amount' field (in paise) is required."}, status=400)
         )
 
     try:
         amount_paise = int(raw_amount)
     except (TypeError, ValueError):
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "INVALID_AMOUNT", "message": "Amount must be an integer in minor units (paise)."}, status=400)
         )
 
     # Minimum amount validation: 100 paise (₹1.00)
     if amount_paise < 100:
-        return _cors_response(
+        return cors(
             JsonResponse(
                 {"error": "AMOUNT_TOO_LOW", "message": f"Minimum order amount is 100 paise (got {amount_paise})."},
                 status=400,
@@ -91,17 +98,17 @@ def create_order_view(request: HttpRequest) -> HttpResponse:
         )
     except RazorpayAuthError as exc:
         logger.error(f"Razorpay authentication error creating order: {exc}")
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "AUTH_FAILURE", "message": "Invalid Razorpay credentials."}, status=401)
         )
     except (RazorpayApiError, RazorpayNetworkError, RazorpayError) as exc:
         logger.error(f"Razorpay API error creating order: {exc}")
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "RAZORPAY_API_ERROR", "message": str(exc)}, status=500)
         )
     except Exception as exc:
         logger.error(f"Unexpected error creating order: {exc}")
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "INTERNAL_ERROR", "message": "Failed to create payment order."}, status=500)
         )
 
@@ -116,7 +123,7 @@ def create_order_view(request: HttpRequest) -> HttpResponse:
     if order.get("receipt"):
         response_data["receipt"] = order["receipt"]
 
-    return _cors_response(JsonResponse(response_data, status=200))
+    return cors(JsonResponse(response_data, status=200))
 
 
 @csrf_exempt
@@ -131,8 +138,11 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
             "razorpay_signature": "..."
         }
     """
+    def cors(res: HttpResponse) -> HttpResponse:
+        return _cors_response(res, request)
+
     if request.method == "OPTIONS":
-        return _cors_response(HttpResponse(status=200))
+        return cors(HttpResponse(status=200))
 
     if request.method == "GET":
         try:
@@ -145,7 +155,7 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
                     if hasattr(created_val, "isoformat")
                     else str(created_val or "")
                 )
-                return _cors_response(
+                return cors(
                     JsonResponse(
                         {
                             "status": "success",
@@ -162,20 +172,20 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
                         status=200,
                     )
                 )
-            return _cors_response(JsonResponse({"status": "empty", "payment": None}, status=200))
+            return cors(JsonResponse({"status": "empty", "payment": None}, status=200))
         except Exception as e:
             logger.warning(f"Could not fetch latest verified payment: {e}")
-            return _cors_response(JsonResponse({"status": "empty", "payment": None}, status=200))
+            return cors(JsonResponse({"status": "empty", "payment": None}, status=200))
 
     if request.method != "POST":
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "METHOD_NOT_ALLOWED", "message": "Only GET and POST requests are permitted."}, status=405)
         )
 
     try:
         body = json.loads(request.body.decode("utf-8")) if request.body else {}
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "MALFORMED_JSON", "message": "Request body must be valid JSON."}, status=400)
         )
 
@@ -205,7 +215,7 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
         missing_fields.append("razorpay_signature")
 
     if missing_fields:
-        return _cors_response(
+        return cors(
             JsonResponse(
                 {
                     "error": "MISSING_FIELDS",
@@ -226,18 +236,18 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
         )
     except RazorpayAuthError as exc:
         logger.error(f"Razorpay authentication error during signature verification: {exc}")
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "AUTH_FAILURE", "message": "Razorpay gateway secret is not configured."}, status=401)
         )
     except Exception as exc:
         logger.error(f"Unexpected error verifying signature: {exc}")
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "VERIFICATION_ERROR", "message": "Error occurred during verification."}, status=500)
         )
 
     if not is_valid:
         logger.warning(f"Payment verification failed: signature mismatch for order {order_id} / payment {payment_id}")
-        return _cors_response(
+        return cors(
             JsonResponse(
                 {
                     "status": "failure",
@@ -307,7 +317,7 @@ def verify_payment_view(request: HttpRequest) -> HttpResponse:
     except Exception as exc:
         logger.warning(f"Could not update/persist payment state for {associated_payment_id}: {exc}")
 
-    return _cors_response(
+    return cors(
         JsonResponse(
             {
                 "status": "success",
@@ -340,25 +350,28 @@ def record_payment_failure_view(request: HttpRequest) -> HttpResponse:
     Returns:
         JSON: { "status": "success", "ingested": true, "payment_id": "pay_...", ... }
     """
+    def cors(res: HttpResponse) -> HttpResponse:
+        return _cors_response(res, request)
+
     if request.method == "OPTIONS":
-        return _cors_response(HttpResponse(status=200))
+        return cors(HttpResponse(status=200))
 
     if request.method != "POST":
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "METHOD_NOT_ALLOWED", "message": "Only POST requests are permitted."}, status=405)
         )
 
     try:
         body = json.loads(request.body.decode("utf-8")) if request.body else {}
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "MALFORMED_JSON", "message": "Request body must be valid JSON."}, status=400)
         )
 
     payment_id = str(body.get("payment_id") or body.get("razorpay_payment_id") or "").strip()
     order_id = str(body.get("order_id") or body.get("razorpay_order_id") or "").strip()
     if not payment_id:
-        return _cors_response(
+        return cors(
             JsonResponse({"error": "MISSING_PAYMENT_ID", "message": "The 'payment_id' field is required."}, status=400)
         )
 
@@ -460,7 +473,7 @@ def record_payment_failure_view(request: HttpRequest) -> HttpResponse:
         f"Authentic failed payment ingested: ID={payment_id}, Category={failure_category}, Amount={amount_paise}"
     )
 
-    return _cors_response(
+    return cors(
         JsonResponse(
             {
                 "status": "success",

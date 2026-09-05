@@ -22,11 +22,11 @@ services:
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_ALLOWED_HOSTS
-        value: localhost,127.0.0.1
+        value: localhost,127.0.0.1,revenueos.vercel.app,revenue-os-woad.vercel.app,.vercel.app
       - key: DJANGO_CSRF_TRUSTED_ORIGINS
-        value: https://revenueos.vercel.app
+        value: https://revenueos.vercel.app,https://revenue-os-woad.vercel.app
       - key: FRONTEND_ORIGIN
-        value: https://revenueos.vercel.app
+        value: https://revenue-os-woad.vercel.app
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB
