@@ -208,10 +208,16 @@ WS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
         "WS_ALLOWED_ORIGINS",
-        f"{FRONTEND_ORIGIN},http://localhost:3000,http://127.0.0.1:3000",
+        f"{FRONTEND_ORIGIN},https://revenueos.vercel.app,http://localhost:3000,http://127.0.0.1:3000",
     ).split(",")
     if origin.strip()
 ]
+
+# Ensure canonical Vercel production origin is permitted for WebSocket and CSRF
+if "https://revenueos.vercel.app" not in WS_ALLOWED_ORIGINS:
+    WS_ALLOWED_ORIGINS.append("https://revenueos.vercel.app")
+if "https://revenueos.vercel.app" not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append("https://revenueos.vercel.app")
 
 # Automatically include Render external origin in CSRF_TRUSTED_ORIGINS if deployed on Render
 _render_host_origin = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
