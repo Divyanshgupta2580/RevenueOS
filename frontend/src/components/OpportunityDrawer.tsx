@@ -395,11 +395,11 @@ export default function OpportunityDrawer({
       role="dialog"
       aria-modal="true"
       aria-label="Payment Recovery Command Center"
-      className="fixed inset-0 z-50 overflow-hidden bg-black/80 backdrop-blur-sm flex justify-end"
+      className="fixed inset-0 z-50 overflow-hidden bg-black/25 backdrop-blur-[1px] flex justify-end"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl bg-[#091021] border-l border-[#1b263b] h-full overflow-y-auto flex flex-col p-4 sm:p-6 shadow-2xl space-y-5"
+        className="w-full max-w-2xl bg-[#091021] border-l border-[#1b263b] h-full overflow-y-auto flex flex-col p-4 sm:p-6 shadow-2xl shadow-black/80 space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ==================================================
