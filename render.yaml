@@ -4,14 +4,15 @@ services:
     runtime: python
     plan: free
     region: oregon
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: cd backend && PYTHONPATH=. python -m uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: daphne -b 0.0.0.0 -p $PORT revenueos.asgi:application
     healthCheckPath: /api/health/
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.3
       - key: PYTHONPATH
-        value: backend
+        value: .
       - key: DJANGO_SETTINGS_MODULE
         value: revenueos.settings
       - key: DJANGO_DEBUG
@@ -19,9 +20,9 @@ services:
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_ALLOWED_HOSTS
-        value: revenueos-backend.onrender.com,localhost,127.0.0.1
+        value: localhost,127.0.0.1
       - key: DJANGO_CSRF_TRUSTED_ORIGINS
-        value: https://revenueos-backend.onrender.com,https://revenueos.vercel.app
+        value: https://revenueos.vercel.app
       - key: FRONTEND_ORIGIN
         value: https://revenueos.vercel.app
       - key: MONGODB_URI

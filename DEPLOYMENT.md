@@ -2,7 +2,7 @@
 
 This guide outlines the deployment architecture, configuration steps, and environment verification for deploying RevenueOS to free-tier cloud infrastructure:
 - **Frontend**: Vercel (Next.js 16 App Router)
-- **Backend**: Render (Django 5, Django Channels, Uvicorn ASGI)
+- **Backend**: Render (Django 5, Django Channels, Daphne ASGI)
 - **Database**: MongoDB Atlas (M0 Free Tier)
 
 ---
@@ -14,10 +14,10 @@ Browser (Operator Client)
     |
     +---- HTTPS: https://revenueos.vercel.app (Static Assets, App UI)
     |
-    +---- WSS:   wss://revenueos-backend.onrender.com/ws/v1/app/ (Live Socket)
+    +---- WSS:   wss://<RENDER_EXTERNAL_HOSTNAME>/ws/v1/app/ (Live Socket)
     |
     v
-Render Web Service (Django Channels + Uvicorn)
+Render Web Service (Django Channels + Daphne ASGI)
     |
     +---- Direct Driver (PyMongo) ----> MongoDB Atlas M0 (Persistent Collections)
     |
@@ -42,8 +42,8 @@ Render Web Service (Django Channels + Uvicorn)
 | `DJANGO_SETTINGS_MODULE` | Active Django settings | `revenueos.settings` |
 | `DJANGO_SECRET_KEY` | Strong random secret for cryptographic signing | Random 50+ chars |
 | `DJANGO_DEBUG` | Production debug flag (must be false) | `false` |
-| `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames | `revenueos-backend.onrender.com,localhost,127.0.0.1` |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | Trusted origins for CSRF protection | `https://revenueos-backend.onrender.com,https://revenueos.vercel.app` |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames (Render host auto-detected via `RENDER_EXTERNAL_HOSTNAME`) | `localhost,127.0.0.1` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Trusted origins for CSRF protection | `https://revenueos.vercel.app` |
 | `FRONTEND_ORIGIN` | Allowed CORS origin for session credentials | `https://revenueos.vercel.app` |
 | `MONGODB_URI` | MongoDB Atlas connection string | `mongodb+srv://<username>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority` |
 | `MONGODB_DB` | Production database name | `revenueos_production` |
@@ -80,8 +80,9 @@ Render Web Service (Django Channels + Uvicorn)
 1. Connect your GitHub repository to Render.
 2. Select **Blueprint** to use `render.yaml` or create a **Web Service**:
    - **Environment**: `Python`
-   - **Build Command**: `pip install -r backend/requirements.txt`
-   - **Start Command**: `cd backend && PYTHONPATH=. python -m uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT`
+   - **Root Directory**: `backend`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `daphne -b 0.0.0.0 -p $PORT revenueos.asgi:application`
    - **Health Check Path**: `/api/health/`
 3. Add the required environment variables under the **Environment** tab.
 4. Deploy the service and verify `/api/health/` returns `200 OK`.

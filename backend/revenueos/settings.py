@@ -23,14 +23,55 @@ SECRET_KEY = os.environ.get(
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").lower()
 DEBUG = ENVIRONMENT == "development"
 
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.environ.get(
-        "DJANGO_ALLOWED_HOSTS",
-        "localhost,127.0.0.1,0.0.0.0,testserver",
-    ).split(",")
-    if host.strip()
-]
+def _resolve_allowed_hosts(env: dict[str, str] | None = None) -> list[str]:
+    """Dynamically construct ALLOWED_HOSTS for local development and cloud deployments (e.g. Render).
+
+    - Preserves standard local development hosts (localhost, 127.0.0.1, 0.0.0.0, testserver, ::1).
+    - Incorporates explicit hosts from DJANGO_ALLOWED_HOSTS or ALLOWED_HOSTS.
+    - Automatically incorporates Render's injected RENDER_EXTERNAL_HOSTNAME without hardcoding.
+    - Strips whitespace, ignores empty entries, prevents duplicates, and strictly forbids wildcards.
+    """
+    import os
+
+    source = env if env is not None else os.environ
+
+    # 1. Base local development and test hostnames
+    default_dev_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "testserver", "::1", "[::1]"]
+    hosts: list[str] = list(default_dev_hosts)
+
+    # 2. Gather user/environment-configured host strings
+    raw_env_hosts = source.get("DJANGO_ALLOWED_HOSTS") or source.get("ALLOWED_HOSTS") or ""
+    if raw_env_hosts.strip():
+        for item in raw_env_hosts.split(","):
+            cleaned = item.strip()
+            # Do not allow wildcard '*' to weaken host protection
+            if cleaned and cleaned != "*" and cleaned not in hosts:
+                hosts.append(cleaned)
+
+    # 3. Dynamic Render environment detection:
+    # Render automatically injects RENDER_EXTERNAL_HOSTNAME (e.g. revenueos-backend-f81a.onrender.com)
+    render_hostname = source.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    if render_hostname and render_hostname != "*":
+        clean_render_host = render_hostname.split(":")[0].strip()
+        if clean_render_host and clean_render_host not in hosts:
+            hosts.append(clean_render_host)
+
+    # 4. Optional Render URL detection (e.g. https://revenueos-backend-f81a.onrender.com)
+    render_url = source.get("RENDER_EXTERNAL_URL", "").strip()
+    if render_url:
+        try:
+            from urllib.parse import urlparse
+
+            url_host = urlparse(render_url).hostname
+            if url_host and url_host != "*" and url_host not in hosts:
+                hosts.append(url_host)
+        except Exception:
+            pass
+
+    return hosts
+
+
+ALLOWED_HOSTS = _resolve_allowed_hosts()
 
 # ------------------------------------------------------------------------------
 # Application Definition
@@ -129,6 +170,15 @@ WS_ALLOWED_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+
+# Automatically include Render external origin in CSRF_TRUSTED_ORIGINS if deployed on Render
+_render_host_origin = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if _render_host_origin:
+    _clean_host = _render_host_origin.split(":")[0].strip()
+    if _clean_host:
+        _render_origin = f"https://{_clean_host}"
+        if _render_origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(_render_origin)
 
 # Ensure frontend and trusted origin hosts are permitted in ALLOWED_HOSTS for Channels origin validation
 for _origin in [FRONTEND_ORIGIN] + CSRF_TRUSTED_ORIGINS + WS_ALLOWED_ORIGINS:

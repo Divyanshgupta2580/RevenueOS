@@ -49,7 +49,7 @@ This guide details the production deployment topology, environment configuration
 - **Build Command:** `pip install --no-cache-dir -r requirements.txt`
 - **Start Command:**
   ```bash
-  uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT --workers 1 --lifespan on
+  daphne -b 0.0.0.0 -p $PORT revenueos.asgi:application
   ```
 - **Health Check Path:** `/api/health/`
 - **Port:** Render dynamically assigns `$PORT`. The backend binds to `0.0.0.0:$PORT`.
@@ -105,12 +105,12 @@ This guide details the production deployment topology, environment configuration
 2. Set Root Directory to `backend`.
 3. Set Runtime to **Python 3**.
 4. Set Build Command: `pip install --no-cache-dir -r requirements.txt`
-5. Set Start Command: `uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT --workers 1`
-6. Populate all Render environment variables from Section 3.
+5. Set Start Command: `daphne -b 0.0.0.0 -p $PORT revenueos.asgi:application`
+6. Populate all Render environment variables from Section 3 (note: `RENDER_EXTERNAL_HOSTNAME` is auto-detected into `ALLOWED_HOSTS`).
 7. Configure Health Check Path to `/api/health/`.
 8. Trigger deployment and verify logs show:
    ```
-   INFO: Uvicorn running on http://0.0.0.0:10000 (Press CTRL+C to quit)
+   [INFO] daphne.server: Listening on TCP address 0.0.0.0:10000
    ```
 9. Verify via curl:
    ```bash
