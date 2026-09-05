@@ -32,9 +32,9 @@ async function testCrossSiteCookie() {
   const cookiesAfterLogin = await context.cookies("https://revenueos-backend-f81a.onrender.com");
   console.log("Cookies stored for onrender.com:", cookiesAfterLogin.map(c => ({ name: c.name, sameSite: c.sameSite, secure: c.secure, httpOnly: c.httpOnly })));
 
-  // 2. Now navigate to a cross-site origin (e.g. https://revenueos.vercel.app or http://localhost:3000)
-  console.log("\nNavigating to cross-site frontend: http://localhost:3000...");
-  await page.goto("http://localhost:3000");
+  // 2. Now navigate to cross-site origin https://revenueos.vercel.app
+  console.log("\nNavigating to cross-site frontend: https://revenueos.vercel.app...");
+  await page.goto("https://revenueos.vercel.app");
 
   // Check if page can connect to Render WSS with the cookie
   console.log("Attempting WebSocket connection from cross-site page to Render WSS...");
@@ -42,36 +42,62 @@ async function testCrossSiteCookie() {
     return new Promise((resolve) => {
       const socket = new WebSocket("wss://revenueos-backend-f81a.onrender.com/ws/v1/app/");
       let opened = false;
+      const responses = [];
+      const startTime = performance.now();
+
       socket.onopen = () => {
         opened = true;
+        // 1. Send ping
         socket.send(JSON.stringify({
           protocolVersion: "v1",
           type: "ping",
-          requestId: "test-cross-site",
+          requestId: "test-ping",
+          timestamp: new Date().toISOString(),
+          payload: {}
+        }));
+        // 2. Send revenue.list
+        socket.send(JSON.stringify({
+          protocolVersion: "v1",
+          type: "revenue.list",
+          requestId: "test-rev-list",
+          timestamp: new Date().toISOString(),
+          payload: { page: 1, limit: 10 }
+        }));
+        // 3. Send metrics.summary
+        socket.send(JSON.stringify({
+          protocolVersion: "v1",
+          type: "metrics.summary",
+          requestId: "test-metrics",
           timestamp: new Date().toISOString(),
           payload: {}
         }));
       };
+
       socket.onmessage = (e) => {
-        resolve({ success: true, opened: true, data: e.data });
-        socket.close();
+        const elapsed = Math.round(performance.now() - startTime);
+        responses.push({ data: JSON.parse(e.data), elapsedMs: elapsed });
+        if (responses.length >= 3) {
+          socket.close();
+          resolve({ success: true, opened: true, responses });
+        }
       };
+
       socket.onerror = () => {};
+
       socket.onclose = (e) => {
         if (!opened) {
           resolve({ success: false, code: e.code, reason: e.reason });
         }
       };
+
       setTimeout(() => {
-        if (!opened) {
-          socket.close();
-          resolve({ success: false, timeout: true });
-        }
-      }, 10000);
+        socket.close();
+        resolve({ success: opened, opened, responses, timeout: responses.length < 3 });
+      }, 15000);
     });
   });
 
-  console.log("Cross-site WebSocket connection result:", wsResult);
+  console.log("Cross-site WebSocket connection result:", JSON.stringify(wsResult, null, 2));
   await browser.close();
 }
 
