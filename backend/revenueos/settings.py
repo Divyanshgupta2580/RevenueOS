@@ -20,8 +20,49 @@ SECRET_KEY = os.environ.get(
     "revenueos-insecure-dev-key-change-in-production-minimum-50-characters-long",
 )
 
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").lower()
-DEBUG = ENVIRONMENT == "development"
+def _resolve_debug_mode(env: dict[str, str] | None = None) -> tuple[str, bool]:
+    """Resolve active environment name and DEBUG mode with strict production defaults.
+
+    Resolution Priority:
+    1. Explicit DJANGO_DEBUG or DEBUG boolean flag:
+       If explicitly set to 'false', '0', 'no', 'off', 'f', False -> DEBUG is False.
+       If explicitly set to 'true', '1', 'yes', 'on', 't', True -> DEBUG is True.
+    2. Cloud platform detection:
+       If RENDER='true' or RENDER_EXTERNAL_HOSTNAME is present -> default environment is 'production' and DEBUG is False.
+    3. Explicit ENVIRONMENT variable:
+       If ENVIRONMENT in ('production', 'prod', 'staging') -> DEBUG is False.
+       If ENVIRONMENT in ('development', 'dev', 'local', 'test') -> DEBUG is True (unless explicit DJANGO_DEBUG/DEBUG overrides it).
+    4. Default fallback:
+       In local dev (no cloud platform, no production env), default to ENVIRONMENT='development', DEBUG=True.
+    """
+    source = env if env is not None else os.environ
+
+    # 1. Cloud platform detection (Render sets RENDER=true or RENDER_EXTERNAL_HOSTNAME)
+    is_render = bool(source.get("RENDER") or source.get("RENDER_EXTERNAL_HOSTNAME"))
+
+    # 2. Determine environment name
+    default_env = "production" if is_render else "development"
+    env_name = source.get("ENVIRONMENT", default_env).strip().lower()
+
+    # 3. Explicit DJANGO_DEBUG or DEBUG flags have highest priority
+    raw_debug = source.get("DJANGO_DEBUG")
+    if raw_debug is None:
+        raw_debug = source.get("DEBUG")
+
+    if raw_debug is not None:
+        clean_debug = raw_debug.strip().lower()
+        is_debug = clean_debug in ("true", "1", "yes", "on", "t")
+    else:
+        # Fallback based on environment name and cloud detection
+        if is_render or env_name in ("production", "prod", "staging"):
+            is_debug = False
+        else:
+            is_debug = env_name in ("development", "dev", "local", "test")
+
+    return env_name, is_debug
+
+
+ENVIRONMENT, DEBUG = _resolve_debug_mode()
 
 def _resolve_allowed_hosts(env: dict[str, str] | None = None) -> list[str]:
     """Dynamically construct ALLOWED_HOSTS for local development and cloud deployments (e.g. Render).

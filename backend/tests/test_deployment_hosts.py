@@ -6,7 +6,7 @@ from unittest.mock import patch
 import yaml
 from django.test import Client, SimpleTestCase, override_settings
 
-from revenueos.settings import _resolve_allowed_hosts
+from revenueos.settings import _resolve_allowed_hosts, _resolve_debug_mode
 
 
 class TestAllowedHostsResolution(SimpleTestCase):
@@ -131,3 +131,87 @@ class TestRenderConfiguration(SimpleTestCase):
         assert service["healthCheckPath"] == "/api/health/"
         assert service["rootDir"] == "backend"
         assert service["buildCommand"] == "pip install -r requirements.txt"
+
+
+class TestDebugModeAndInformationLeakage(SimpleTestCase):
+    """Verifies production DEBUG resolution and zero information leakage."""
+
+    def test_debug_evaluates_false_on_render(self) -> None:
+        """Render production environment resolves DEBUG=False."""
+        # 1. RENDER_EXTERNAL_HOSTNAME present
+        env_name, is_debug = _resolve_debug_mode(
+            {"RENDER_EXTERNAL_HOSTNAME": "revenueos-backend-f81a.onrender.com"}
+        )
+        assert not is_debug
+        assert env_name == "production"
+
+        # 2. RENDER='true' flag present
+        env_name, is_debug = _resolve_debug_mode({"RENDER": "true"})
+        assert not is_debug
+        assert env_name == "production"
+
+        # 3. Explicit DJANGO_DEBUG='false'
+        env_name, is_debug = _resolve_debug_mode(
+            {"DJANGO_DEBUG": "false", "ENVIRONMENT": "development"}
+        )
+        assert not is_debug
+
+    def test_debug_remains_configurable_locally(self) -> None:
+        """Local development defaults to DEBUG=True, but allows manual override."""
+        # Default local dev
+        env_name, is_debug = _resolve_debug_mode({})
+        assert is_debug
+        assert env_name == "development"
+
+        # Explicit local dev
+        env_name, is_debug = _resolve_debug_mode({"ENVIRONMENT": "development"})
+        assert is_debug
+
+        # Explicit local override to false
+        env_name, is_debug = _resolve_debug_mode(
+            {"ENVIRONMENT": "development", "DJANGO_DEBUG": "false"}
+        )
+        assert not is_debug
+
+    def test_root_endpoint_does_not_leak_debug_information(self) -> None:
+        """GET / returns clean 404 with zero URL patterns, stack traces, or secrets."""
+        with override_settings(DEBUG=False):
+            client = Client()
+            response = client.get("/")
+            assert response.status_code == 404
+
+            content = response.content.decode("utf-8")
+
+            # Must NOT contain Django debug page hallmarks
+            assert "Page not found at /" not in content
+            assert "Using the URLconf defined in" not in content
+            assert "Django tried these URL patterns" not in content
+
+            # Must NOT leak URL patterns
+            assert "api/health" not in content
+            assert "api/auth" not in content
+            assert "razorpay" not in content
+            assert "webhooks" not in content
+
+            # Must NOT leak secrets
+            assert "GEMINI" not in content
+            assert "RAZORPAY" not in content
+            assert "MONGODB" not in content
+            assert "SECRET" not in content
+
+    def test_custom_500_handler_does_not_leak_internals(self) -> None:
+        """Custom 500 handler returns sanitized JSON without stack trace."""
+        import json
+
+        from django.test import RequestFactory
+
+        from revenueos.urls import custom_500_view
+
+        rf = RequestFactory()
+        req = rf.get("/")
+        resp = custom_500_view(req)
+        assert resp.status_code == 500
+        data = json.loads(resp.content.decode("utf-8"))
+        assert data["status"] == 500
+        assert "Traceback" not in resp.content.decode("utf-8")
+

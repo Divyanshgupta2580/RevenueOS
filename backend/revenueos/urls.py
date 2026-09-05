@@ -94,3 +94,32 @@ urlpatterns = [
     path("api/razorpay/record-failure/", record_payment_failure_view, name="rzp_record_failure_slash"),
 ]
 
+
+def custom_404_view(request, exception=None) -> JsonResponse:
+    """Production 404 handler that never leaks routes, stack traces, or internal debug info."""
+    return JsonResponse(
+        {
+            "error": "Not Found",
+            "detail": "The requested resource was not found on this server.",
+            "status": 404,
+        },
+        status=404,
+    )
+
+
+def custom_500_view(request) -> JsonResponse:
+    """Production 500 handler that never leaks internal exceptions, stack traces, or secrets."""
+    return JsonResponse(
+        {
+            "error": "Internal Server Error",
+            "detail": "An unexpected server error occurred.",
+            "status": 500,
+        },
+        status=500,
+    )
+
+
+handler404 = "revenueos.urls.custom_404_view"
+handler500 = "revenueos.urls.custom_500_view"
+
+
