@@ -71,6 +71,20 @@ export interface UserContext {
   role: string;
 }
 
+export interface StrategyMetric {
+  strategy: string;
+  sampleSize: number;
+  observedRecoveries: number;
+  observedRecoveryRate: number;
+  attributionStatus: string;
+}
+
+export interface FunnelStage {
+  stage: string;
+  count: number;
+  description: string;
+}
+
 export interface MetricSummary {
   revenueAtRiskPaise: number;
   expectedRecoverablePaise: number;
@@ -81,11 +95,20 @@ export interface MetricSummary {
   activeOpportunities: number;
   blockedActions?: number;
   observedSampleSize?: number;
+  observedTransactions?: number;
+  observedRecoveries?: number;
+  isSampleSizeSufficient?: boolean;
   attributionConfidence?: string;
+  attributionStatus?: string;
   baselineAssumption?: string;
   baselineComparison?: string;
   statisticalSignificance?: string;
   sampleSizeHonestNote?: string;
+  productionMerchantRecovery?: string;
+  strategyBreakdown?: StrategyMetric[];
+  funnel?: FunnelStage[];
+  historicalTrendAvailable?: boolean;
+  historicalTrendReason?: string;
 }
 
 export interface EvidenceSummary {
@@ -154,8 +177,20 @@ export interface Opportunity {
   rulesEvaluated?: RuleEvaluation[];
   policyVerdict?: PolicyVerdict;
   evidenceSummary?: EvidenceSummary;
+  isFallback?: boolean;
+  decisionGeneratedSeconds?: number;
+  aiTelemetry?: DecisionTelemetry;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface DecisionTelemetry {
+  context_build_ms?: number;
+  gemini_request_ms?: number;
+  schema_validation_ms?: number;
+  policy_validation_ms?: number;
+  persistence_ms?: number;
+  total_decision_ms?: number;
 }
 
 export interface BrainRecommendation {
@@ -170,14 +205,7 @@ export interface BrainRecommendation {
   latency_ms?: number;
   is_fallback?: boolean;
   fallback_reason?: string;
-  telemetry?: {
-    context_build_ms?: number;
-    gemini_request_ms?: number;
-    schema_validation_ms?: number;
-    policy_validation_ms?: number;
-    persistence_ms?: number;
-    total_decision_ms?: number;
-  };
+  telemetry?: DecisionTelemetry;
 }
 
 export interface RuleEvaluation {

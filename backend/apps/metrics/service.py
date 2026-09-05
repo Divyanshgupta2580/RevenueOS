@@ -51,10 +51,81 @@ class MetricsService:
         blocked_count = db.recovery_decisions.count_documents({"policy_decision.status": "BLOCKED"})
 
         # 8. Sample Size & Attribution Integrity
-        sample_size = len(recovered_payments)
-        attribution_conf = "INSUFFICIENT SAMPLE SIZE" if sample_size < 30 else "MEASURED"
-        stat_sig = "INSUFFICIENT SAMPLE SIZE" if sample_size < 30 else "STATISTICALLY SIGNIFICANT"
-        sample_note = f"{sample_size} verified transaction{'s' if sample_size != 1 else ''}"
+        total_observed_transactions = db.payments.count_documents({})
+        observed_recoveries_count = len(recovered_payments)
+        is_sample_sufficient = observed_recoveries_count >= 30
+        attribution_conf = "MEASURED" if is_sample_sufficient else "INSUFFICIENT SAMPLE SIZE"
+        stat_sig = "STATISTICALLY SIGNIFICANT" if is_sample_sufficient else "INSUFFICIENT SAMPLE SIZE"
+        sample_note = f"{observed_recoveries_count} verified transaction{'s' if observed_recoveries_count != 1 else ''}"
+
+        # 9. Strategy-Level Breakdown (PAYMENT_LINK, REMINDER, RETRY, STOP)
+        # Find all decisions to group by action
+        all_decisions = list(db.recovery_decisions.find({}))
+        strategy_counts: dict[str, int] = {"PAYMENT_LINK": 0, "REMINDER": 0, "RETRY": 0, "STOP": 0}
+        strategy_recoveries: dict[str, int] = {"PAYMENT_LINK": 0, "REMINDER": 0, "RETRY": 0, "STOP": 0}
+
+        # Track which payment had which strategy
+        payment_strategy_map: dict[str, str] = {}
+        for d in all_decisions:
+            act = (d.get("action") or d.get("ai_recommendation", {}).get("action") or "STOP").upper()
+            if act in strategy_counts:
+                strategy_counts[act] += 1
+            pid = d.get("payment_id")
+            if pid:
+                payment_strategy_map[pid] = act
+
+        for p in recovered_payments:
+            pid = p.get("payment_id")
+            if pid and pid in payment_strategy_map:
+                strat = payment_strategy_map[pid]
+                if strat in strategy_recoveries:
+                    strategy_recoveries[strat] += 1
+
+        strategy_breakdown = []
+        for strat in ["PAYMENT_LINK", "REMINDER", "RETRY", "STOP"]:
+            s_size = strategy_counts[strat]
+            s_rec = strategy_recoveries[strat]
+            s_rate = (s_rec / s_size) if s_size > 0 else 0.0
+            if s_size == 0:
+                attr_status = "No observations"
+            elif s_size < 5:
+                attr_status = "Not enough observations"
+            elif s_size < 30:
+                attr_status = "Preliminary (Low Power)"
+            else:
+                attr_status = "Measured"
+
+            strategy_breakdown.append({
+                "strategy": strat,
+                "sampleSize": s_size,
+                "observedRecoveries": s_rec,
+                "observedRecoveryRate": round(s_rate, 4),
+                "attributionStatus": attr_status,
+            })
+
+        # 10. Recovery Funnel (Failed -> At-Risk -> Analyzed -> Policy Approved -> Recovery Action -> Recovered)
+        total_failed_count = len(failed_payments)
+        analyzed_count = len(all_decisions)
+        approved_count = db.recovery_decisions.count_documents({"policy_decision.status": "APPROVED"})
+        action_count = db.recovery_executions.count_documents({})
+
+        funnel = [
+            {"stage": "Failed Payments", "count": total_failed_count, "description": "Raw gateway failure records"},
+            {"stage": "At-Risk Payments", "count": len(active_failed), "description": "Unresolved drop-offs in active queue"},
+            {"stage": "Analyzed", "count": analyzed_count, "description": "Evaluated with Gemini 3.6 Flash"},
+            {"stage": "Policy Approved", "count": approved_count, "description": "Passed Guarded Autopilot rules"},
+            {"stage": "Recovery Action", "count": action_count, "description": "Dispatched intervention execution"},
+            {"stage": "Recovered", "count": observed_recoveries_count, "description": "Verified captured/paid status"},
+        ]
+
+        # 11. Historical Trend Availability
+        # Check distinct dates in payments
+        distinct_dates = set()
+        for p in failed_payments:
+            dt = p.get("created_at")
+            if dt:
+                distinct_dates.add(str(dt)[:10])
+        trend_available = len(distinct_dates) >= 3
 
         # Validate integer minor units
         return {
@@ -66,12 +137,21 @@ class MetricsService:
             "recoveryRate": round(recovery_rate, 4),
             "activeOpportunities": active_count,
             "blockedActions": blocked_count,
-            "observedSampleSize": sample_size,
+            "observedSampleSize": observed_recoveries_count,
+            "observedTransactions": total_observed_transactions,
+            "observedRecoveries": observed_recoveries_count,
+            "isSampleSizeSufficient": is_sample_sufficient,
             "attributionConfidence": attribution_conf,
+            "attributionStatus": attribution_conf,
             "baselineAssumption": "Illustrative 8% heuristic control (not causal merchant history)",
             "baselineComparison": "Illustrative",
+            "baselineLabel": "Illustrative baseline",
             "statisticalSignificance": stat_sig,
             "sampleSizeHonestNote": sample_note,
             "baselineAssumptionNote": "8% heuristic evaluation model (not empirical historical merchant data)",
             "productionMerchantRecovery": "Not measured",
+            "strategyBreakdown": strategy_breakdown,
+            "funnel": funnel,
+            "historicalTrendAvailable": trend_available,
+            "historicalTrendReason": "Historical trend unavailable: minimum 3 consecutive observation periods required.",
         }
