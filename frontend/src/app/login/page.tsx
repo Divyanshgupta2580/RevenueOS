@@ -129,6 +129,7 @@ function LoginForm() {
                 setError(null);
               }}
               onError={() => setError("Turnstile verification failed. Please refresh.")}
+              onExpire={() => setTurnstileToken("")}
             />
           </div>
 

@@ -4,6 +4,7 @@ Includes Argon2id password hashing, Cloudflare Turnstile token validation,
 and PyMongo-backed session management.
 """
 
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -15,6 +16,8 @@ from django.conf import settings
 
 from apps.core.exceptions import AuthenticationError
 from apps.database.client import get_database
+
+logger = logging.getLogger(__name__)
 
 ph = PasswordHasher(
     time_cost=3,
@@ -69,9 +72,7 @@ def verify_turnstile_token(token: str, remote_ip: str | None = None) -> bool:
     if not token:
         return False
 
-    # Immediate check for official test tokens and invalid test tokens
-    if token == "1x0000000000000000000000000000000AA":
-        return True
+    # Immediate rejection for official fail tokens and invalid test tokens
     if (
         token == "2x0000000000000000000000000000000AA"
         or token.lower().startswith("invalid")
@@ -83,12 +84,17 @@ def verify_turnstile_token(token: str, remote_ip: str | None = None) -> bool:
     secret_key = getattr(settings, "TURNSTILE_SECRET_KEY", "")
     environment = getattr(settings, "ENVIRONMENT", "development")
 
+    # In development or test environments, official test tokens pass without external network dependency
+    if environment in ("development", "test") and token in (
+        "1x0000000000000000000000000000000AA",
+        "XXXX.DUMMY.TOKEN.XXXX",
+        "dev_turnstile_bypass_token",
+    ):
+        return True
+
     # In development/test mode, or when testing with Cloudflare test token, use official Cloudflare test secret
     if not secret_key or token == "XXXX.DUMMY.TOKEN.XXXX" or environment in ("development", "test"):
         secret_key = "1x0000000000000000000000000000000AA"
-
-    if environment == "development" and token == "dev_turnstile_bypass_token":
-        return True
 
     try:
         payload: dict[str, Any] = {
@@ -105,9 +111,26 @@ def verify_turnstile_token(token: str, remote_ip: str | None = None) -> bool:
         )
         if res.status_code == 200:
             data = res.json()
-            return bool(data.get("success", False))
+            is_success = bool(data.get("success", False))
+            if not is_success:
+                return False
+
+            # Verify hostname returned by Cloudflare against allowed hostnames
+            resp_hostname = data.get("hostname")
+            if resp_hostname:
+                allowed_hostnames = getattr(settings, "TURNSTILE_ALLOWED_HOSTNAMES", [])
+                if allowed_hostnames and resp_hostname.lower() not in allowed_hostnames:
+                    logger.warning(
+                        "Turnstile verification rejected: hostname '%s' not in allowed hostnames %s",
+                        resp_hostname,
+                        allowed_hostnames,
+                    )
+                    return False
+
+            return True
         return False
-    except Exception:
+    except Exception as exc:
+        logger.error("Turnstile verification request failed: %s", exc)
         return False
 
 

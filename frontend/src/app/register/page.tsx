@@ -150,6 +150,7 @@ export default function RegisterPage() {
                   setError(null);
                 }}
                 onError={() => setError("Turnstile verification failed. Please refresh.")}
+                onExpire={() => setTurnstileToken("")}
               />
             </div>
 

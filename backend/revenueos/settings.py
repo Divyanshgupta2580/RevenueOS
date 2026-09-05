@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -247,6 +248,45 @@ CSRF_COOKIE_SECURE = not DEBUG
 # Cloudflare Turnstile
 TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
 TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
+
+def _resolve_turnstile_allowed_hostnames(
+    frontend_origin: str,
+    csrf_origins: list[str],
+    environment: str,
+    env_source: dict[str, str] | None = None,
+) -> list[str]:
+    """Resolve allowed hostnames for Turnstile validation.
+
+    Guarantees that Cloudflare Turnstile verification strictly matches the stable
+    production frontend domain or trusted CSRF origins, rejecting arbitrary hostnames
+    without hardcoding ephemeral deployment URLs.
+    """
+    source = env_source if env_source is not None else os.environ
+    raw_env_hosts = source.get("TURNSTILE_ALLOWED_HOSTNAMES", "")
+    allowed: set[str] = {
+        h.strip().lower()
+        for h in raw_env_hosts.split(",")
+        if h.strip()
+    }
+    if frontend_origin:
+        host = urlparse(frontend_origin).hostname
+        if host:
+            allowed.add(host.lower())
+    for csrf_origin in csrf_origins:
+        host = urlparse(csrf_origin).hostname
+        if host:
+            allowed.add(host.lower())
+
+    if environment in ("development", "test", "dev", "local"):
+        allowed.update(["localhost", "127.0.0.1", "0.0.0.0", "testserver", "example.com"])
+
+    return sorted(list(allowed))
+
+TURNSTILE_ALLOWED_HOSTNAMES = _resolve_turnstile_allowed_hostnames(
+    FRONTEND_ORIGIN,
+    CSRF_TRUSTED_ORIGINS,
+    ENVIRONMENT,
+)
 
 # Google Gemini API (Multi-Key Failover Support)
 GEMINI_API_KEY_1 = os.environ.get("GEMINI_API_KEY_1", "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
