@@ -288,7 +288,7 @@ async function runVisualVerification() {
   // Screenshot 1: Drawer Initial State
   const pathInitial = path.join(ARTIFACTS_DIR, "phase2_drawer_initial.png");
   await page.screenshot({ path: pathInitial });
-  console.log(`✓ Captured Screenshot 1: ${pathInitial}`);
+  console.log(`[OK] Captured Screenshot 1: ${pathInitial}`);
 
   // Expand Decision Evidence
   await page.$eval('#decision-evidence-toggle', (el) => el.click());
@@ -300,7 +300,7 @@ async function runVisualVerification() {
   await page.waitForTimeout(300);
   const pathApproved = path.join(ARTIFACTS_DIR, "phase2_drawer_policy_approved.png");
   await page.screenshot({ path: pathApproved });
-  console.log(`✓ Captured Screenshot 4 (Approved Policy): ${pathApproved}`);
+  console.log(`[OK] Captured Screenshot 4 (Approved Policy): ${pathApproved}`);
 
   // Screenshot 2: AI Processing State
   // Scroll back to top for AI processing
@@ -312,14 +312,14 @@ async function runVisualVerification() {
     await page.waitForTimeout(60);
     const pathAnalysis = path.join(ARTIFACTS_DIR, "phase2_drawer_ai_analysis.png");
     await page.screenshot({ path: pathAnalysis });
-    console.log(`✓ Captured Screenshot 2 (AI Analysis): ${pathAnalysis}`);
+    console.log(`[OK] Captured Screenshot 2 (AI Analysis): ${pathAnalysis}`);
   }
 
   // Wait for Ready State
   await page.waitForTimeout(700);
   const pathDecisionReady = path.join(ARTIFACTS_DIR, "phase2_drawer_decision_ready.png");
   await page.screenshot({ path: pathDecisionReady });
-  console.log(`✓ Captured Screenshot 3 (Decision Ready): ${pathDecisionReady}`);
+  console.log(`[OK] Captured Screenshot 3 (Decision Ready): ${pathDecisionReady}`);
 
   // Trigger Explanation & Screenshot 6
   const explainBtn = page.locator('#explain-decision-btn');
@@ -330,7 +330,7 @@ async function runVisualVerification() {
     await page.waitForTimeout(600);
     const pathExplanation = path.join(ARTIFACTS_DIR, "phase2_drawer_decision_explanation.png");
     await page.screenshot({ path: pathExplanation });
-    console.log(`✓ Captured Screenshot 6 (Decision Explanation): ${pathExplanation}`);
+    console.log(`[OK] Captured Screenshot 6 (Decision Explanation): ${pathExplanation}`);
   }
 
   // Close drawer
@@ -355,7 +355,7 @@ async function runVisualVerification() {
   await page.waitForTimeout(300);
   const pathBlocked = path.join(ARTIFACTS_DIR, "phase2_drawer_policy_blocked.png");
   await page.screenshot({ path: pathBlocked });
-  console.log(`✓ Captured Screenshot 5 (Blocked Policy): ${pathBlocked}`);
+  console.log(`[OK] Captured Screenshot 5 (Blocked Policy): ${pathBlocked}`);
 
   // Mobile Viewport Verification (390x844)
   console.log("Testing Mobile Viewport (390x844)...");
@@ -371,7 +371,7 @@ async function runVisualVerification() {
 
   const pathMobile = path.join(ARTIFACTS_DIR, "phase2_drawer_mobile_390.png");
   await page.screenshot({ path: pathMobile });
-  console.log(`✓ Captured Screenshot 7 (Mobile 390x844): ${pathMobile}`);
+  console.log(`[OK] Captured Screenshot 7 (Mobile 390x844): ${pathMobile}`);
 
   // Comprehensive Viewport Validation Matrix
   const viewports = [
