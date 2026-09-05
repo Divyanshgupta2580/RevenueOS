@@ -144,7 +144,8 @@ def test_missing_fields_rejected() -> None:
 
 def test_hard_decline_and_exhausted_retries_force_stop() -> None:
     """Acceptance Test: Fraud, stolen cards, or exhausted retries strictly trigger STOP."""
-    provider = GeminiProvider(api_key=None)  # triggers fallback engine
+    from apps.brain.key_pool import GeminiKeyPool
+    provider = GeminiProvider(pool=GeminiKeyPool([]))  # triggers fallback engine
     input_fraud = RecoveryBrainInput(
         payment_id="pay_fraud_001",
         amount_paise=100000,
