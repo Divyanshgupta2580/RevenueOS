@@ -9,14 +9,16 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.authentication.services import (
+    check_account_rate_limit,
     check_rate_limit,
+    clear_account_login_failures,
     create_session,
     create_user,
     delete_session,
     get_user_by_username,
+    record_account_login_failure,
     validate_session,
     verify_password,
-    verify_turnstile_token,
 )
 from apps.database.client import get_database
 
@@ -44,7 +46,7 @@ def get_client_ip(request: HttpRequest) -> str:
 
 @csrf_exempt
 def register_view(request: HttpRequest) -> HttpResponse:
-    """Register a new operator account with Argon2id password hashing and Turnstile verification."""
+    """Register a new operator account with Argon2id password hashing."""
     if request.method == "OPTIONS":
         return _cors_response(request, HttpResponse(status=200))
 
@@ -77,7 +79,6 @@ def register_view(request: HttpRequest) -> HttpResponse:
     email = str(body.get("email") or body.get("username", "")).strip().lower()
     password = str(body.get("password", ""))
     confirm_password = str(body.get("confirmPassword") or body.get("confirm_password", ""))
-    turnstile_token = str(body.get("turnstileToken") or body.get("turnstile_token", "")).strip()
 
     if not email or not password or not confirm_password:
         return _cors_response(
@@ -112,15 +113,6 @@ def register_view(request: HttpRequest) -> HttpResponse:
             JsonResponse(
                 {"error": {"code": "PASSWORD_MISMATCH", "message": "Passwords do not match."}},
                 status=400,
-            ),
-        )
-
-    if not turnstile_token or not verify_turnstile_token(turnstile_token, remote_ip=client_ip):
-        return _cors_response(
-            request,
-            JsonResponse(
-                {"error": {"code": "CAPTCHA_FAILED", "message": "Turnstile verification failed or is missing."}},
-                status=403,
             ),
         )
 
@@ -170,7 +162,7 @@ def register_view(request: HttpRequest) -> HttpResponse:
 
 @csrf_exempt
 def login_view(request: HttpRequest) -> HttpResponse:
-    """Authenticate operator credentials with Cloudflare Turnstile and Argon2id."""
+    """Authenticate operator credentials with Argon2id and session issuance."""
     if request.method == "OPTIONS":
         return _cors_response(request, HttpResponse(status=200))
 
@@ -203,7 +195,6 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
     username = str(body.get("username") or body.get("email", "")).strip().lower()
     password = str(body.get("password", ""))
-    turnstile_token = str(body.get("turnstileToken") or body.get("turnstile_token", "")).strip()
 
     if not username or not password:
         return _cors_response(
@@ -214,19 +205,25 @@ def login_view(request: HttpRequest) -> HttpResponse:
             ),
         )
 
-    # Validate Turnstile CAPTCHA server-side
-    if not turnstile_token or not verify_turnstile_token(turnstile_token, remote_ip=client_ip):
+    # Per-account failed login rate limiting (brute force protection)
+    if not check_account_rate_limit(username, max_failures=5, window_seconds=300):
         return _cors_response(
             request,
             JsonResponse(
-                {"error": {"code": "CAPTCHA_FAILED", "message": "Turnstile verification failed or missing."}},
-                status=403,
+                {
+                    "error": {
+                        "code": "RATE_LIMITED",
+                        "message": "Too many failed login attempts for this account. Please wait before trying again.",
+                    }
+                },
+                status=429,
             ),
         )
 
     # Verify user exists
     user = get_user_by_username(username)
     if not user:
+        record_account_login_failure(username)
         return _cors_response(
             request,
             JsonResponse(
@@ -237,6 +234,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
     # Verify Argon2id password hash
     if not verify_password(password, user.get("password_hash", "")):
+        record_account_login_failure(username)
         return _cors_response(
             request,
             JsonResponse(
@@ -244,6 +242,9 @@ def login_view(request: HttpRequest) -> HttpResponse:
                 status=401,
             ),
         )
+
+    # Clear failed login attempts upon successful credential verification
+    clear_account_login_failures(username)
 
     # Update last_login in MongoDB
     db = get_database()

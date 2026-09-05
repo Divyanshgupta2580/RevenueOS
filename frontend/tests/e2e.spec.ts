@@ -3,8 +3,8 @@
  *
  * Covers:
  * 1. Unauthenticated redirect to /login
- * 2. Login page renders credentials and Turnstile widget
- * 3. Missing Turnstile token blocks submission with disabled state and security error
+ * 2. Login page renders credentials and clean sign-in form
+ * 3. Registration page renders form fields and link to Login
  * 4. Command Center dashboard layout and 5 primary KPI cards
  * 5. Navigation tabs switch seamlessly between Radar, Ledger, and Metrics
  * 6. Truthful empty states render when no data exists (No Dummy Data)
@@ -13,8 +13,8 @@
 
 import { test, expect } from "@playwright/test";
 
-test.describe("RevenueOS End-to-End User Journey", () => {
-  test("1. Unauthenticated access redirects to /login", async ({ page }) => {
+test.describe("RevenueOS Command Center E2E", () => {
+  test("1. Unauthenticated root visits immediately redirect to /login", async ({ page }) => {
     await page.route("**/api/auth/me/", async (route) => {
       await route.fulfill({
         status: 401,
@@ -28,14 +28,15 @@ test.describe("RevenueOS End-to-End User Journey", () => {
     await expect(page.locator("h1")).toContainText("RevenueOS");
   });
 
-  test("2. Login page renders empty credentials, Register link, and Turnstile widget", async ({ page }) => {
+  test("2. Login page renders empty credentials, Register link, and submit button", async ({ page }) => {
     await page.goto("/login");
     const emailInput = page.locator("input[type='email']");
     await expect(emailInput).toBeVisible();
     await expect(emailInput).toHaveValue("");
     await expect(page.locator("input[type='password']")).toBeVisible();
-    await expect(page.locator("button[type='submit']")).toBeVisible();
-    await expect(page.locator("text=Bot Verification")).toBeVisible();
+    const submitBtn = page.locator("button[type='submit']");
+    await expect(submitBtn).toBeVisible();
+    await expect(submitBtn).toBeEnabled();
     await expect(page.locator("a:has-text('Register here')")).toBeVisible();
   });
 
@@ -44,8 +45,9 @@ test.describe("RevenueOS End-to-End User Journey", () => {
     await expect(page.locator("input[type='email']")).toBeVisible();
     await expect(page.locator("input[placeholder='Create a strong password']")).toBeVisible();
     await expect(page.locator("input[placeholder='Re-enter password']")).toBeVisible();
-    await expect(page.locator("button[type='submit']")).toBeVisible();
-    await expect(page.locator("text=Bot Verification")).toBeVisible();
+    const submitBtn = page.locator("button[type='submit']");
+    await expect(submitBtn).toBeVisible();
+    await expect(submitBtn).toBeEnabled();
     await expect(page.locator("a:has-text('Sign In')")).toBeVisible();
   });
 
@@ -124,6 +126,18 @@ test.describe("RevenueOS End-to-End User Journey", () => {
   });
 
   test("8. Razorpay Checkout tab and /checkout route render redesigned checkout interface", async ({ page }) => {
+    // Authenticate session for /checkout page access
+    await page.route("**/api/auth/me/", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          authenticated: true,
+          user: { username: "operator", role: "operator" },
+        }),
+      });
+    });
+
     // Test standalone /checkout page
     await page.goto("/checkout");
     await expect(page.locator("text=Secure Payments for Revenue Recovery")).toBeVisible();
@@ -138,18 +152,6 @@ test.describe("RevenueOS End-to-End User Journey", () => {
     } else {
       await expect(page.locator("button:has-text('with Razorpay')")).toBeVisible();
     }
-
-    // Test dashboard Checkout tab
-    await page.route("**/api/auth/me/", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          authenticated: true,
-          user: { username: "operator", role: "operator" },
-        }),
-      });
-    });
 
     await page.goto("/");
     await page.locator("button:has-text('Checkout')").click();

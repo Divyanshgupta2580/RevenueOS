@@ -70,7 +70,6 @@ def test_no_secrets_appear_in_probe_responses() -> None:
     forbidden_tokens = [
         "GEMINI_API_KEY",
         "RAZORPAY_KEY_SECRET",
-        "TURNSTILE_SECRET_KEY",
         "MONGODB_URI",
         "mongodb+srv://",
         "password",

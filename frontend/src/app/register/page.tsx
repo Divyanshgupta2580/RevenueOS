@@ -4,24 +4,17 @@ import { Shield, Lock, Mail, ArrowRight, UserCheck } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import TurnstileWidget from "@/components/TurnstileWidget";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [turnstileToken, setTurnstileToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!turnstileToken) {
-      setError("Please complete the Cloudflare security verification.");
-      return;
-    }
 
     if (password.length < 8) {
       setError("Password must be at least 8 characters in length.");
@@ -46,7 +39,6 @@ export default function RegisterPage() {
           email: email.trim().toLowerCase(),
           password,
           confirmPassword,
-          turnstileToken,
         }),
       });
 
@@ -139,25 +131,10 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {/* Cloudflare Turnstile Bot Protection */}
-            <div className="pt-1">
-              <label className="block text-[11px] font-medium text-zinc-400 text-center mb-1">
-                Bot Verification
-              </label>
-              <TurnstileWidget
-                onSuccess={(token) => {
-                  setTurnstileToken(token);
-                  setError(null);
-                }}
-                onError={() => setError("Turnstile verification failed. Please refresh.")}
-                onExpire={() => setTurnstileToken("")}
-              />
-            </div>
-
             <button
               type="submit"
-              disabled={loading || !turnstileToken}
-              className="w-full py-2.5 px-4 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+              disabled={loading}
+              className="w-full py-2.5 px-4 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
             >
               {loading ? (
                 "Creating Account..."
@@ -187,7 +164,7 @@ export default function RegisterPage() {
 
         {/* Security Notice */}
         <p className="text-[11px] text-zinc-500 text-center mt-6">
-          Protected by Cloudflare Turnstile &bull; Argon2id Hash Security
+          Protected by Argon2id Hash &bull; Session Security
         </p>
       </div>
     </div>

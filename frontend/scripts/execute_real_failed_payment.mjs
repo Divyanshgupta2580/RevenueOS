@@ -9,7 +9,6 @@ async function run() {
   // 1. Authenticate via backend to obtain a valid session cookie
   const uniqueUser = `op_fail_${Date.now()}@revenueos.local`;
   const password = "StrongPassword2026!";
-  const turnstileToken = "1x0000000000000000000000000000000AA";
 
   console.log(`Registering operator: ${uniqueUser}...`);
   const regRes = await fetch("http://localhost:8000/api/auth/register/", {
@@ -19,7 +18,6 @@ async function run() {
       username: uniqueUser,
       password: password,
       confirmPassword: password,
-      turnstileToken: turnstileToken,
     }),
   });
 
@@ -38,7 +36,6 @@ async function run() {
       body: JSON.stringify({
         username: uniqueUser,
         password: password,
-        turnstileToken: turnstileToken,
       }),
     });
     const loginCookie = loginRes.headers.get("set-cookie");

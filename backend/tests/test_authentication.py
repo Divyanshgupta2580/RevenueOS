@@ -1,4 +1,4 @@
-"""Acceptance tests for Phase 2: Authentication & Cloudflare Turnstile."""
+"""Acceptance tests for Authentication & Session Management."""
 
 import json
 
@@ -10,8 +10,6 @@ from apps.authentication.views import SESSION_COOKIE_NAME
 
 TEST_USERNAME = "operator@revenueos.internal"
 TEST_PASSWORD = "ValidPassword1234!"
-VALID_TURNSTILE_TOKEN = "1x0000000000000000000000000000000AA"  # Cloudflare official always-pass
-INVALID_TURNSTILE_TOKEN = "2x0000000000000000000000000000000AA"  # Cloudflare official always-fail
 
 
 @pytest.fixture
@@ -21,12 +19,11 @@ def seeded_user():
 
 
 def test_valid_login(seeded_user) -> None:
-    """Acceptance Test: VALID LOGIN with Argon2id and Turnstile verification."""
+    """Acceptance Test: VALID LOGIN with Argon2id password verification and session issuance."""
     client = Client()
     payload = {
         "username": TEST_USERNAME,
         "password": TEST_PASSWORD,
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     response = client.post(
         "/api/auth/login/",
@@ -57,7 +54,6 @@ def test_invalid_password(seeded_user) -> None:
     payload = {
         "username": TEST_USERNAME,
         "password": "WrongPassword999!",
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     response = client.post(
         "/api/auth/login/",
@@ -69,45 +65,6 @@ def test_invalid_password(seeded_user) -> None:
     data = response.json()
     assert data["error"]["code"] == "INVALID_CREDENTIALS"
     assert SESSION_COOKIE_NAME not in response.cookies
-
-
-def test_invalid_turnstile(seeded_user) -> None:
-    """Acceptance Test: INVALID TURNSTILE returns 403."""
-    client = Client()
-    payload = {
-        "username": TEST_USERNAME,
-        "password": TEST_PASSWORD,
-        "turnstileToken": INVALID_TURNSTILE_TOKEN,
-    }
-    response = client.post(
-        "/api/auth/login/",
-        data=json.dumps(payload),
-        content_type="application/json",
-    )
-
-    assert response.status_code == 403
-    data = response.json()
-    assert data["error"]["code"] == "CAPTCHA_FAILED"
-    assert SESSION_COOKIE_NAME not in response.cookies
-
-
-def test_missing_turnstile(seeded_user) -> None:
-    """Acceptance Test: MISSING TURNSTILE returns 403."""
-    client = Client()
-    payload = {
-        "username": TEST_USERNAME,
-        "password": TEST_PASSWORD,
-        "turnstileToken": "",
-    }
-    response = client.post(
-        "/api/auth/login/",
-        data=json.dumps(payload),
-        content_type="application/json",
-    )
-
-    assert response.status_code == 403
-    data = response.json()
-    assert data["error"]["code"] == "CAPTCHA_FAILED"
 
 
 def test_expired_session(seeded_user, mock_db) -> None:
@@ -138,7 +95,6 @@ def test_logout(seeded_user) -> None:
     login_payload = {
         "username": TEST_USERNAME,
         "password": TEST_PASSWORD,
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     login_res = client.post(
         "/api/auth/login/",
@@ -196,7 +152,6 @@ def test_registration_success(mock_db) -> None:
         "email": "new.operator@revenueos.internal",
         "password": "StrongPassword123!",
         "confirmPassword": "StrongPassword123!",
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     response = client.post(
         "/api/auth/register/",
@@ -228,7 +183,6 @@ def test_registration_weak_password() -> None:
         "email": "operator.short@revenueos.internal",
         "password": "short",
         "confirmPassword": "short",
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     response = client.post(
         "/api/auth/register/",
@@ -246,7 +200,6 @@ def test_registration_password_mismatch() -> None:
         "email": "operator.mismatch@revenueos.internal",
         "password": "Password1234!",
         "confirmPassword": "DifferentPassword1234!",
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     response = client.post(
         "/api/auth/register/",
@@ -264,7 +217,6 @@ def test_registration_invalid_email() -> None:
         "email": "not-an-email",
         "password": "Password1234!",
         "confirmPassword": "Password1234!",
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     response = client.post(
         "/api/auth/register/",
@@ -282,7 +234,6 @@ def test_registration_duplicate_email(seeded_user) -> None:
         "email": TEST_USERNAME,
         "password": "AnotherPassword123!",
         "confirmPassword": "AnotherPassword123!",
-        "turnstileToken": VALID_TURNSTILE_TOKEN,
     }
     response = client.post(
         "/api/auth/register/",
@@ -291,24 +242,6 @@ def test_registration_duplicate_email(seeded_user) -> None:
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "ACCOUNT_EXISTS"
-
-
-def test_registration_invalid_turnstile() -> None:
-    """Acceptance Test: Invalid Turnstile token blocks registration."""
-    client = Client()
-    payload = {
-        "email": "operator.captcha@revenueos.internal",
-        "password": "Password1234!",
-        "confirmPassword": "Password1234!",
-        "turnstileToken": INVALID_TURNSTILE_TOKEN,
-    }
-    response = client.post(
-        "/api/auth/register/",
-        data=json.dumps(payload),
-        content_type="application/json",
-    )
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "CAPTCHA_FAILED"
 
 
 def test_registration_to_login_flow(mock_db) -> None:
@@ -324,7 +257,6 @@ def test_registration_to_login_flow(mock_db) -> None:
             "email": email,
             "password": password,
             "confirmPassword": password,
-            "turnstileToken": VALID_TURNSTILE_TOKEN,
         }),
         content_type="application/json",
     )
@@ -336,7 +268,6 @@ def test_registration_to_login_flow(mock_db) -> None:
         data=json.dumps({
             "username": email,
             "password": password,
-            "turnstileToken": VALID_TURNSTILE_TOKEN,
         }),
         content_type="application/json",
     )

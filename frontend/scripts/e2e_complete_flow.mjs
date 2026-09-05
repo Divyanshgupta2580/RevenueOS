@@ -63,18 +63,8 @@ async function run() {
   await page.locator("input#password").fill(testPassword);
   await page.locator("input#confirmPassword").fill(testPassword);
 
-  // Wait for Turnstile verification to enable the submit button
   const regSubmitBtn = page.locator("button[type='submit']");
-  const turnstileFrame = page.frameLocator("iframe[src*='challenges.cloudflare.com']");
-  try {
-    const turnstileBox = turnstileFrame.locator("input[type='checkbox']");
-    if (await turnstileBox.count() > 0 && await turnstileBox.first().isVisible().catch(() => false)) {
-      await turnstileBox.first().click().catch(() => {});
-    }
-  } catch {}
-
-  console.log("[STEP 1] Waiting for submit button to be enabled by Turnstile token...");
-  await expect(regSubmitBtn).toBeEnabled({ timeout: 15000 });
+  await expect(regSubmitBtn).toBeEnabled({ timeout: 5000 });
 
   await page.screenshot({ path: "scratch/e2e_01_register_filled.png" });
   console.log("[STEP 1] Submitting registration...");
@@ -96,16 +86,7 @@ async function run() {
   await page.locator("input#password").fill(testPassword);
 
   const loginSubmitBtn = page.locator("button[type='submit']");
-  const loginTurnstileFrame = page.frameLocator("iframe[src*='challenges.cloudflare.com']");
-  try {
-    const loginTurnstileBox = loginTurnstileFrame.locator("input[type='checkbox']");
-    if (await loginTurnstileBox.count() > 0 && await loginTurnstileBox.first().isVisible().catch(() => false)) {
-      await loginTurnstileBox.first().click().catch(() => {});
-    }
-  } catch {}
-
-  console.log("[STEP 2] Waiting for login submit button to be enabled by Turnstile token...");
-  await expect(loginSubmitBtn).toBeEnabled({ timeout: 15000 });
+  await expect(loginSubmitBtn).toBeEnabled({ timeout: 5000 });
 
   console.log("[STEP 2] Submitting login...");
   await loginSubmitBtn.click();
@@ -256,7 +237,6 @@ async function run() {
     data: {
       email: "unregistered_ghost_999@revenueos.local",
       password: "SomePassword123!",
-      turnstileToken: "XXXX.DUMMY.TOKEN.XXXX",
     },
   });
   console.log("[STEP 6A] Unregistered login HTTP Status (expected 401):", unregRes.status());
@@ -266,7 +246,6 @@ async function run() {
     data: {
       email: testEmail,
       password: "WrongPassword999!",
-      turnstileToken: "XXXX.DUMMY.TOKEN.XXXX",
     },
   });
   console.log("[STEP 6B] Wrong password HTTP Status (expected 401):", badPassRes.status());
@@ -277,21 +256,18 @@ async function run() {
       email: testEmail,
       password: testPassword,
       confirmPassword: testPassword,
-      turnstileToken: "XXXX.DUMMY.TOKEN.XXXX",
     },
   });
   console.log("[STEP 6C] Duplicate registration HTTP Status (expected 409):", dupRes.status());
 
-  // D. Invalid Turnstile
-  const badTurnstileRes = await page.request.post("http://localhost:8000/api/auth/register/", {
+  // D. Missing fields registration
+  const missingFieldsRes = await page.request.post("http://localhost:8000/api/auth/register/", {
     data: {
-      email: `another-${testId}@revenueos.local`,
+      email: `missing-${testId}@revenueos.local`,
       password: testPassword,
-      confirmPassword: testPassword,
-      turnstileToken: "completely_invalid_turnstile_token",
     },
   });
-  console.log("[STEP 6D] Bad Turnstile HTTP Status (expected 403):", badTurnstileRes.status());
+  console.log("[STEP 6D] Missing fields HTTP Status (expected 400):", missingFieldsRes.status());
 
   // E. Duplicate Payment Handling
   if (verifiedPaymentData) {
@@ -318,7 +294,7 @@ async function run() {
         unregisteredLoginStatus: unregRes.status(),
         wrongPasswordStatus: badPassRes.status(),
         duplicateRegistrationStatus: dupRes.status(),
-        badTurnstileStatus: badTurnstileRes.status(),
+        missingFieldsStatus: missingFieldsRes.status(),
         timestamp: new Date().toISOString(),
       },
       null,

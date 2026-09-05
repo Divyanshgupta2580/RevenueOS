@@ -1,7 +1,6 @@
 """WebSocket authentication middleware for Django Channels."""
 
 from typing import Any
-from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 
@@ -48,12 +47,6 @@ class WebSocketAuthMiddleware:
                         session_token = c.split("=", 1)[1]
                         break
 
-        # 3. Check query parameter fallback (?token=... or ?session_token=...)
-        if not session_token and scope.get("query_string"):
-            qs = parse_qs(scope["query_string"].decode("utf-8", errors="ignore"))
-            token_params = qs.get("token") or qs.get("session_token")
-            if token_params:
-                session_token = token_params[0]
 
         # Validate token via async wrapper
         if session_token:

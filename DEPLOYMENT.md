@@ -55,7 +55,6 @@ Render Web Service (Django Channels + Daphne ASGI)
 | `GEMINI_API_KEY_3` | Tertiary Google Gemini API key (Optional failover slot) | API key string |
 | `GEMINI_API_KEY` | Backward-compatible fallback if `GEMINI_API_KEY_1` is unset | API key string |
 | `GEMINI_MODEL` | Gemini model variant | `gemini-3.6-flash` |
-| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile server verification secret | `0x4AAAAAA...` |
 
 ### B. Vercel Frontend Environment Variables
 
@@ -63,7 +62,7 @@ Render Web Service (Django Channels + Daphne ASGI)
 |---|---|---|
 | `NEXT_PUBLIC_API_ORIGIN` | Backend HTTP API base URL | `https://revenueos-backend.onrender.com` |
 | `NEXT_PUBLIC_WS_URL` | Backend WebSocket endpoint | `wss://revenueos-backend.onrender.com/ws/v1/app/` |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile public site key | `0x4AAAAAA...` |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Razorpay Test Mode Key ID | `rzp_test_...` |
 
 ---
 
@@ -94,7 +93,7 @@ Render Web Service (Django Channels + Daphne ASGI)
 4. Under **Environment Variables**, set:
    - `NEXT_PUBLIC_API_ORIGIN`
    - `NEXT_PUBLIC_WS_URL`
-   - `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+   - `NEXT_PUBLIC_RAZORPAY_KEY_ID`
 5. Deploy. Verify build succeeds and all static pages render without hydration errors.
 
 ### Step 4: Razorpay Webhooks Configuration

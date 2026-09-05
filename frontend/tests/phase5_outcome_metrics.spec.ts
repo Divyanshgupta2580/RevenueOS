@@ -156,6 +156,6 @@ test.describe("Phase 5 Outcome Metrics & Scientific Honesty", () => {
     const content = await page.content();
     expect(content).not.toContain("GEMINI_API_KEY");
     expect(content).not.toContain("RAZORPAY_KEY_SECRET");
-    expect(content).not.toContain("TURNSTILE_SECRET_KEY");
+    expect(content).not.toContain("DJANGO_SECRET_KEY");
   });
 });

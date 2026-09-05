@@ -1,7 +1,7 @@
 """Authentication services for RevenueOS.
 
-Includes Argon2id password hashing, Cloudflare Turnstile token validation,
-and PyMongo-backed session management.
+Includes Argon2id password hashing, sliding-window rate limiting,
+per-account failure cooldown protection, and PyMongo-backed session management.
 """
 
 import logging
@@ -9,10 +9,8 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import requests
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from django.conf import settings
 
 from apps.core.exceptions import AuthenticationError
 from apps.database.client import get_database
@@ -46,6 +44,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 _rate_limit_records: dict[str, list[float]] = {}
+_account_failure_records: dict[str, list[float]] = {}
 
 
 def check_rate_limit(key: str, max_requests: int = 10, window_seconds: int = 60) -> bool:
@@ -62,76 +61,49 @@ def check_rate_limit(key: str, max_requests: int = 10, window_seconds: int = 60)
     return True
 
 
-def verify_turnstile_token(token: str, remote_ip: str | None = None) -> bool:
-    """Verify Cloudflare Turnstile CAPTCHA token server-side.
+def check_account_rate_limit(username: str, max_failures: int = 5, window_seconds: int = 300) -> bool:
+    """Check if an account has exceeded maximum allowed failed login attempts.
 
-    Official Cloudflare test tokens & keys:
-    - 1x0000000000000000000000000000000AA: Always passes
-    - 2x0000000000000000000000000000000AA: Always fails
+    Provides brute-force and credential-stuffing protection on a per-account basis
+    independent of client IP or network origin.
     """
-    if not token:
-        return False
-
-    # Immediate rejection for official fail tokens and invalid test tokens
-    if (
-        token == "2x0000000000000000000000000000000AA"
-        or token.lower().startswith("invalid")
-        or "invalid" in token.lower()
-        or token.lower() in ("failed", "bad_token")
-    ):
-        return False
-
-    secret_key = getattr(settings, "TURNSTILE_SECRET_KEY", "")
-    environment = getattr(settings, "ENVIRONMENT", "development")
-
-    # In development or test environments, official test tokens pass without external network dependency
-    if environment in ("development", "test") and token in (
-        "1x0000000000000000000000000000000AA",
-        "XXXX.DUMMY.TOKEN.XXXX",
-        "dev_turnstile_bypass_token",
-    ):
+    if not username:
         return True
+    key = username.strip().lower()
+    now = datetime.now(UTC).timestamp()
+    cutoff = now - window_seconds
+    timestamps = _account_failure_records.get(key, [])
+    valid_timestamps = [t for t in timestamps if t > cutoff]
+    _account_failure_records[key] = valid_timestamps
+    return len(valid_timestamps) < max_failures
 
-    # In development/test mode, or when testing with Cloudflare test token, use official Cloudflare test secret
-    if not secret_key or token == "XXXX.DUMMY.TOKEN.XXXX" or environment in ("development", "test"):
-        secret_key = "1x0000000000000000000000000000000AA"
 
-    try:
-        payload: dict[str, Any] = {
-            "secret": secret_key,
-            "response": token,
-        }
-        if remote_ip:
-            payload["remoteip"] = remote_ip
+def record_account_login_failure(username: str, window_seconds: int = 300) -> None:
+    """Record a failed login attempt for account cooldown tracking."""
+    if not username:
+        return
+    key = username.strip().lower()
+    now = datetime.now(UTC).timestamp()
+    cutoff = now - window_seconds
+    timestamps = _account_failure_records.get(key, [])
+    valid_timestamps = [t for t in timestamps if t > cutoff]
+    valid_timestamps.append(now)
+    _account_failure_records[key] = valid_timestamps
 
-        res = requests.post(
-            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-            data=payload,
-            timeout=5.0,
-        )
-        if res.status_code == 200:
-            data = res.json()
-            is_success = bool(data.get("success", False))
-            if not is_success:
-                return False
 
-            # Verify hostname returned by Cloudflare against allowed hostnames
-            resp_hostname = data.get("hostname")
-            if resp_hostname:
-                allowed_hostnames = getattr(settings, "TURNSTILE_ALLOWED_HOSTNAMES", [])
-                if allowed_hostnames and resp_hostname.lower() not in allowed_hostnames:
-                    logger.warning(
-                        "Turnstile verification rejected: hostname '%s' not in allowed hostnames %s",
-                        resp_hostname,
-                        allowed_hostnames,
-                    )
-                    return False
+def clear_account_login_failures(username: str) -> None:
+    """Clear failed login attempts upon successful authentication."""
+    if not username:
+        return
+    key = username.strip().lower()
+    _account_failure_records.pop(key, None)
 
-            return True
-        return False
-    except Exception as exc:
-        logger.error("Turnstile verification request failed: %s", exc)
-        return False
+
+def reset_rate_limits() -> None:
+    """Clear all in-memory rate limit records (for testing isolation and maintenance)."""
+    _rate_limit_records.clear()
+    _account_failure_records.clear()
+
 
 
 def create_user(username: str, plain_password: str, role: str = "operator") -> dict[str, Any]:

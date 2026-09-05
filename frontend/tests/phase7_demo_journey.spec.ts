@@ -135,7 +135,7 @@ test.describe("Phase 7 Hackathon Demonstration Experience", () => {
     const bodyContent = await page.content();
     expect(bodyContent).not.toContain("GEMINI_API_KEY");
     expect(bodyContent).not.toContain("RAZORPAY_KEY_SECRET");
-    expect(bodyContent).not.toContain("TURNSTILE_SECRET_KEY");
+    expect(bodyContent).not.toContain("DJANGO_SECRET_KEY");
     expect(bodyContent).not.toContain("MONGODB_URI");
   });
 });

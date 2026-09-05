@@ -31,7 +31,7 @@ RevenueOS answers four questions deterministically:
 │ • Dark Fintech Dashboard    │◄────── Authenticated WSS ──────►│ • Django Channels Consumer  │
 │ • Real-time Metrics         │        (Application RPC)        │ • In-Memory Channel Layer   │
 │ • Opportunity Detail        │                                 │ • PyMongo Data Access Layer │
-│ • Audit Decision Ledger     │─────── HTTPS Auth / Turnstile ─►│ • Turnstile Server Guard    │
+│ • Audit Decision Ledger     │───── HTTPS Auth / Rate Limit ──►│ • Auth & Session Guard     │
 └─────────────────────────────┘                                 └──────────────┬──────────────┘
                                                                                │
                                        ┌───────────────────────────────────────┼───────────────────────────────────────┐
@@ -51,12 +51,12 @@ RevenueOS answers four questions deterministically:
 
 ## 2. Fundamental Architectural Principles
 
-1. **Modular Monolith over Microservices:** RevenueOS runs as a single, highly cohesive backend service (Django + Channels + Uvicorn) paired with a modern Next.js client. No distributed network hops, no Kafka, no microservices overhead.
+1. **Modular Monolith over Microservices:** RevenueOS runs as a single, highly cohesive backend service (Django + Channels + Daphne) paired with a modern Next.js client. No distributed network hops, no Kafka, no microservices overhead.
 2. **Zero Floating-Point Money:** All financial transactions and calculations operate exclusively on integer minor currency units (e.g., INR paise: `1 INR = 100 paise`). Floats are strictly prohibited in the business and persistence layers.
 3. **AI Recommends, Rules Authorize:** The LLM (Google Gemini) is an advisory engine, never an execution authority. Every AI recommendation must be validated against a deterministic Guarded Autopilot policy layer before any financial action is taken.
 4. **WebSocket-First Application Transport:** Standard web dashboards suffer from polling lag or stale state. RevenueOS uses a persistent, authenticated WebSocket connection for all interactive user operations, real-time opportunity updates, and ledger notifications.
 5. **Deterministic Baseline Measurement:** RevenueOS does not fabricate recovery claims. If no data exists, a truthful empty state is rendered. Incremental recovery ($Y - X$) is computed by comparing actual recovery against a documented, deterministic control heuristic.
-6. **Strict Free-Tier Compatibility:** Operates completely within the free allocations of MongoDB Atlas (512MB), Render (Web Service), Vercel (Hobby), Cloudflare Turnstile, Razorpay Test Mode, and Gemini API.
+6. **Strict Free-Tier Compatibility:** Operates completely within the free allocations of MongoDB Atlas (512MB), Render (Web Service), Vercel (Hobby), Razorpay Test Mode, and Gemini API.
 
 ---
 
@@ -67,12 +67,12 @@ RevenueOS answers four questions deterministically:
 | **Frontend Framework** | **Next.js 15+ (App Router)** | Server-side rendering, strict TypeScript support, optimized asset delivery, zero-config Vercel deployment. | Traditional SPAs (Create React App/Vite standalone) lack seamless SSR and modern route-level layout semantics. |
 | **Styling & UI** | **Tailwind CSS + Lucide React** | Low-overhead utility CSS, fast compilation, strict design token control. Lucide provides semantic fintech icons. | Material UI / Chakra UI / AntD (heavy bundle size, inconsistent dark themes, excess CSS-in-JS runtime). |
 | **Backend Framework** | **Django 5+ & Django Channels** | Rock-solid request lifecycle, built-in security middleware, battle-tested ASGI Channels implementation for WebSockets. | FastAPI (lacks built-in auth middleware robustness for sessions), Flask (poor native WebSocket integration). |
-| **ASGI Server** | **Uvicorn** | Fast, compliant ASGI 3.0 server supporting both HTTP and WebSocket protocols under a single port. | Daphne (slower event loop), Gunicorn alone (does not handle WebSockets natively without Uvicorn workers). |
+| **ASGI Server** | **Daphne** | Compliant ASGI server supporting HTTP and WebSocket protocols under a single port. | Gunicorn alone (does not handle WebSockets natively without ASGI workers). |
 | **Database Driver** | **PyMongo directly** | Pure, lightweight, direct document manipulation without ORM overhead. Optimal for MongoDB Atlas free tier. | MongoEngine / Mongoose (brittle schema layers, memory bloat), Django ORM (unnatural mapping for document databases). |
 | **AI Decision Engine**| **Google GenAI Python SDK (`google-genai`)** | Native Google Gemini SDK, strict schema enforcement via Pydantic/dataclasses, low latency. | LangChain / LangGraph / CrewAI (excess abstractions, fragile prompt templates, unnecessary token overhead). |
 | **Payment Gateway** | **Razorpay Test APIs & Webhooks** | Official Razorpay REST APIs for payment link generation and payment fetching; cryptographic webhook verification. | Mock gateway libraries (we interact with real Razorpay Test sandbox). |
 | **Authentication** | **Argon2id + HTTP-only Cookies** | Memory-hard password hashing (OWASP recommended); cookies prevent XSS exfiltration of session credentials. | JWT in localStorage (vulnerable to XSS theft, cannot be easily revoked centrally). |
-| **Anti-Bot Security** | **Cloudflare Turnstile** | Modern, privacy-preserving CAPTCHA replacement. Verified server-side via Cloudflare Secret Key. | Obfuscated canvas text / puzzles (easily bypassed by OCR/LLMs, poor user accessibility). |
+| **Abuse Prevention** | **Sliding-Window IP & Account Rate Limiting** | Lightweight, deterministic in-memory rate limiting across IP origins and per-account failed login cooldowns. | External CAPTCHAs (brittle hostname bindings, third-party dependency failures). |
 
 ---
 
@@ -103,7 +103,7 @@ RevenueOS/
 │       ├── core/               # Shared utilities, money math, exceptions
 │       │   ├── exceptions.py
 │       │   └── money.py        # Integer minor currency utilities (paise)
-│       ├── authentication/     # User auth, Argon2id, Turnstile validation
+│       ├── authentication/     # User auth, Argon2id, sliding-window rate limiting
 │       │   ├── services.py
 │       │   └── views.py
 │       ├── database/           # PyMongo client singleton, indexes, repositories
@@ -137,7 +137,7 @@ RevenueOS/
 │       │   ├── layout.tsx      # Dark root layout, font definitions
 │       │   ├── page.tsx        # Command Center dashboard
 │       │   ├── login/
-│       │   │   └── page.tsx    # Turnstile login screen
+│       │   │   └── page.tsx    # Direct authentication login screen
 │       │   ├── opportunities/
 │       │   │   └── [id]/
 │       │   │       └── page.tsx # Deep-dive Opportunity view
@@ -453,7 +453,7 @@ If no actual transaction outcomes have been recorded, the UI displays an explici
 ## 11. Security Model
 
 1. **Authentication:** Argon2id password hashing ($m=65536, t=3, p=4$).
-2. **Bot Prevention:** Cloudflare Turnstile verification required on login. The client receives a Turnstile token which the backend verifies directly with `https://challenges.cloudflare.com/turnstile/v0/siteverify`.
+2. **Abuse Prevention & Rate Limiting:** Sliding-window rate limiting enforced per IP (15 req/min on login, 10 req/min on register) and per-account failed login lockout (5 failures within 300 seconds triggers cooldown) to prevent brute-force credential stuffing without external CAPTCHA dependency.
 3. **Session Cookies:** `HttpOnly`, `SameSite=Lax` (or `None` in cross-origin production with `Secure=True`), `Secure=True` in production.
 4. **WebSocket Security:** Handshake validates session cookie. Unauthenticated connections are closed immediately with code `4401 (Unauthorized)`.
 5. **Origin Verification:** Both HTTP and WebSocket connections validate incoming `Origin` against `DJANGO_ALLOWED_HOSTS` and `FRONTEND_ORIGIN`.

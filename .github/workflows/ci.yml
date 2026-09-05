@@ -68,7 +68,6 @@ jobs:
         env:
           NEXT_PUBLIC_API_ORIGIN: https://api.revenueos.live
           NEXT_PUBLIC_WS_URL: wss://api.revenueos.live/ws/v1/app/
-          NEXT_PUBLIC_TURNSTILE_SITE_KEY: 0x4AAAAAAAx_mock_site_key
 
   security-and-compliance:
     name: Zero Emojis & Security Compliance

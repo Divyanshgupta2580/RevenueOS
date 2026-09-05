@@ -19,7 +19,7 @@ This guide details the production deployment topology, environment configuration
       │         (Next.js Frontend)         │   │     (Django Channels ASGI Service) │
       │                                    │   │                                    │
       │ • Edge CDN & SSR                   │   │ • Uvicorn ASGI server              │
-      │ • Turnstile Client Widget          │   │ • Listens on 0.0.0.0:$PORT         │
+      │ • Direct HTTPS Auth & Cookies      │   │ • Listens on 0.0.0.0:$PORT         │
       │ • Secure Cookie Transport          │   │ • WebSockets & Webhooks & Health   │
       └────────────────────────────────────┘   └─────────────────┬──────────────────┘
                                                                  │
@@ -81,12 +81,11 @@ This guide details the production deployment topology, environment configuration
 | `GEMINI_API_KEY_3` | Render | Secret | Tertiary Google Gemini API key (Optional failover slot). |
 | `GEMINI_API_KEY` | Render | Secret | Backward-compatible fallback if `GEMINI_API_KEY_1` is unset. |
 | `GEMINI_MODEL` | Render | Public | Selected model (default: `gemini-3.6-flash`). |
-| `TURNSTILE_SECRET_KEY` | Render | Secret | Cloudflare Turnstile Server Secret for `/siteverify`. |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Vercel | Public | Cloudflare Turnstile Client Site Key. |
 | `NEXT_PUBLIC_API_ORIGIN` | Vercel | Public | Backend base URL (e.g., `https://revenueos-backend.onrender.com`). |
 | `NEXT_PUBLIC_WS_URL` | Vercel | Public | Backend WebSocket URL (e.g., `wss://revenueos-backend.onrender.com/ws/v1/app/`). |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Vercel | Public | Razorpay Test Mode Key ID. |
 
-> **Critical Security Rule:** Never define any API keys, database credentials, or gateway secrets under `NEXT_PUBLIC_*`. Only client-safe origins and public site keys may be placed in the frontend bundle.
+> **Critical Security Rule:** Never define any API keys, database credentials, or gateway secrets under `NEXT_PUBLIC_*`. Only client-safe origins and public keys may be placed in the frontend bundle.
 
 > **Important Quota Note:** Google Gemini rate limits and daily quotas (e.g., 20 requests/day on `gemini-3.6-flash` free tier) apply at the Google Cloud Project level. If multiple keys belong to the same GCP project, they share that project's quota. To achieve true quota expansion, configure keys generated across distinct Google Cloud projects. Automatic failover additionally protects against single-key invalidations and transient network failures.
 
@@ -123,7 +122,7 @@ This guide details the production deployment topology, environment configuration
 2. Configure Environment Variables:
    - `NEXT_PUBLIC_API_ORIGIN=https://your-backend.onrender.com`
    - `NEXT_PUBLIC_WS_URL=wss://your-backend.onrender.com/ws/v1/app/`
-   - `NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key`
+   - `NEXT_PUBLIC_RAZORPAY_KEY_ID=your_razorpay_key_id`
 3. Click **Deploy**.
 4. Once built, copy your Vercel URL (e.g., `https://revenueos.vercel.app`) and update Render backend variables:
    - `FRONTEND_ORIGIN=https://revenueos.vercel.app`
@@ -147,7 +146,7 @@ This guide details the production deployment topology, environment configuration
 - [ ] `/health/` responds with `200 OK`
 - [ ] `/ready/` validates MongoDB Atlas connectivity
 - [ ] Browser navigates to Vercel URL with no console errors
-- [ ] Turnstile widget renders and completes challenge
+- [ ] Login and registration forms submit directly and enforce rate limits
 - [ ] Login issues secure HTTP-only cookie
 - [ ] WebSocket handshakes successfully with status 101 Switching Protocols
 - [ ] Live ping/pong heartbeats flow over WebSocket

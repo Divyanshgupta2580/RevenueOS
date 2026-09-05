@@ -181,6 +181,6 @@ test.describe("Phase 4 AI Latency & Transparent Decision Processing UX", () => {
     const pageText = await page.content();
     expect(pageText).not.toContain("GEMINI_API_KEY");
     expect(pageText).not.toContain("RAZORPAY_KEY_SECRET");
-    expect(pageText).not.toContain("TURNSTILE_SECRET_KEY");
+    expect(pageText).not.toContain("DJANGO_SECRET_KEY");
   });
 });

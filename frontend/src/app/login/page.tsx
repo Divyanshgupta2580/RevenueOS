@@ -4,7 +4,6 @@ import { Shield, Lock, Mail, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import TurnstileWidget from "@/components/TurnstileWidget";
 
 function LoginForm() {
   const router = useRouter();
@@ -13,17 +12,11 @@ function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [turnstileToken, setTurnstileToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!turnstileToken) {
-      setError("Please complete the Cloudflare security verification.");
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
@@ -37,7 +30,6 @@ function LoginForm() {
         body: JSON.stringify({
           username: email,
           password,
-          turnstileToken,
         }),
       });
 
@@ -118,25 +110,10 @@ function LoginForm() {
             </div>
           </div>
 
-          {/* Cloudflare Turnstile Bot Protection */}
-          <div className="pt-1">
-            <label className="block text-[11px] font-medium text-zinc-400 text-center mb-1">
-              Bot Verification
-            </label>
-            <TurnstileWidget
-              onSuccess={(token) => {
-                setTurnstileToken(token);
-                setError(null);
-              }}
-              onError={() => setError("Turnstile verification failed. Please refresh.")}
-              onExpire={() => setTurnstileToken("")}
-            />
-          </div>
-
           <button
             type="submit"
-            disabled={loading || !turnstileToken}
-            className="w-full py-2.5 px-4 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+            disabled={loading}
+            className="w-full py-2.5 px-4 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
           >
             {loading ? (
               "Authenticating..."
@@ -165,7 +142,7 @@ function LoginForm() {
 
       {/* Security Notice */}
       <p className="text-[11px] text-zinc-500 text-center mt-6">
-        Protected by Cloudflare Turnstile &bull; Argon2id Session Security
+        Protected by Argon2id Hash &bull; Session Security
       </p>
     </div>
   );

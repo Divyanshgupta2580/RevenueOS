@@ -2,11 +2,11 @@ import { chromium, expect } from "@playwright/test";
 
 async function run() {
   const timestamp = Date.now();
-  const testEmail = `operator_audit_${timestamp}@revenueos.local`;
+  const testEmail = `operator_auth_${timestamp}@revenueos.local`;
   const testPassword = `Pass#${timestamp}Secure`;
 
   console.log("==================================================");
-  console.log("REVENUEOS LIVE TURNSTILE & AUTH E2E AUDIT");
+  console.log("REVENUEOS LIVE AUTH & SESSION E2E AUDIT");
   console.log("==================================================");
   console.log("Test Account:", testEmail);
 
@@ -21,26 +21,22 @@ async function run() {
   const page = await context.newPage();
 
   // 1. REGISTER TEST
-  console.log("\n[TEST 1] Testing /register with Turnstile...");
+  console.log("\n[TEST 1] Testing /register direct auth flow...");
   await page.goto("http://localhost:3000/register", { waitUntil: "domcontentloaded" });
   await expect(page.locator("input#email")).toBeVisible();
 
-  // Check that submit button is initially disabled (enforcing Turnstile)
-  const regBtnInit = page.locator("button[type='submit']");
-  console.log("Register submit button disabled initially:", await regBtnInit.isDisabled());
-  expect(await regBtnInit.isDisabled()).toBe(true);
+  // Verify no Turnstile / Cloudflare verification iframe is rendered anywhere
+  const challengeIframes = page.locator("iframe[src*='cloudflare'], iframe[src*='turnstile']");
+  expect(await challengeIframes.count()).toBe(0);
 
   // Fill form
   await page.locator("input#email").fill(testEmail);
   await page.locator("input#password").fill(testPassword);
   await page.locator("input#confirmPassword").fill(testPassword);
 
-  // Wait for Turnstile challenge completion
-  console.log("Waiting for Turnstile verification...");
-  await page.waitForTimeout(3000);
   const regSubmit = page.locator("button[type='submit']");
-  await expect(regSubmit).toBeEnabled({ timeout: 10000 });
-  console.log("Turnstile completed: Register submit button enabled!");
+  await expect(regSubmit).toBeEnabled();
+  console.log("Register submit button is immediately enabled for direct submission.");
 
   // Submit registration
   await regSubmit.click();
@@ -48,23 +44,24 @@ async function run() {
     () => window.location.pathname === "/login" || document.body.innerText.includes("Sign In to RevenueOS"),
     { timeout: 15000 }
   );
-  console.log("Registration successful -> arrived at login page! URL:", page.url());
+  console.log("Registration successful -> redirected to login page! URL:", page.url());
   expect(page.url()).toContain("/login");
 
   // 2. LOGIN TEST
-  console.log("\n[TEST 2] Testing /login with Turnstile...");
+  console.log("\n[TEST 2] Testing /login direct auth flow...");
   await expect(page.locator("input#email")).toBeVisible();
+
+  // Verify no Turnstile / Cloudflare verification iframe is rendered on login
+  const loginChallengeIframes = page.locator("iframe[src*='cloudflare'], iframe[src*='turnstile']");
+  expect(await loginChallengeIframes.count()).toBe(0);
 
   // Fill login credentials
   await page.locator("input#email").fill(testEmail);
   await page.locator("input#password").fill(testPassword);
 
-  // Wait for Turnstile
-  console.log("Waiting for Turnstile verification on login...");
-  await page.waitForTimeout(3000);
   const loginSubmit = page.locator("button[type='submit']");
-  await expect(loginSubmit).toBeEnabled({ timeout: 10000 });
-  console.log("Turnstile completed: Login submit button enabled!");
+  await expect(loginSubmit).toBeEnabled();
+  console.log("Login submit button is immediately enabled for direct submission.");
 
   // Submit login
   await loginSubmit.click();
@@ -72,7 +69,7 @@ async function run() {
     () => window.location.pathname === "/" || document.body.innerText.includes("Command Center"),
     { timeout: 15000 }
   );
-  console.log("Login successful -> redirected to Command Center dashboard! URL:", page.url());
+  console.log("Login successful -> arrived at Command Center dashboard! URL:", page.url());
   expect(page.url()).toBe("http://localhost:3000/");
 
   // 3. SESSION & WEBSOCKET VERIFICATION
@@ -91,38 +88,8 @@ async function run() {
   console.log("WebSocket indicator label:", label);
   expect(label).toMatch(/WebSocket status: (Connected|Connecting|Reconnecting|Disconnected)/);
 
-  // 4. INVALID TOKEN REJECTION TEST (DIRECT API PROBE)
-  console.log("\n[TEST 4] Verifying server-side rejection of invalid token...");
-  const invalidResp = await page.request.post("http://127.0.0.1:8000/api/auth/login/", {
-    data: {
-      username: testEmail,
-      password: testPassword,
-      turnstileToken: "2x0000000000000000000000000000000AA",
-    },
-  });
-  console.log("Invalid token response status:", invalidResp.status());
-  const invalidJson = await invalidResp.json();
-  console.log("Invalid token error code:", invalidJson.error?.code);
-  expect(invalidResp.status()).toBe(403);
-  expect(invalidJson.error?.code).toBe("CAPTCHA_FAILED");
-
-  // 5. MISSING TOKEN REJECTION TEST (DIRECT API PROBE)
-  console.log("\n[TEST 5] Verifying server-side rejection of missing token...");
-  const missingResp = await page.request.post("http://127.0.0.1:8000/api/auth/login/", {
-    data: {
-      username: testEmail,
-      password: testPassword,
-      turnstileToken: "",
-    },
-  });
-  console.log("Missing token response status:", missingResp.status());
-  const missingJson = await missingResp.json();
-  console.log("Missing token error code:", missingJson.error?.code);
-  expect(missingResp.status()).toBe(403);
-  expect(missingJson.error?.code).toBe("CAPTCHA_FAILED");
-
   console.log("\n==================================================");
-  console.log("ALL TURNSTILE AUDIT TESTS PASSED SUCCESSFULLY (100%)");
+  console.log("ALL CLEAN AUTH E2E AUDIT TESTS PASSED (100%)");
   console.log("==================================================");
 
   await browser.close();

@@ -202,6 +202,9 @@ class InMemoryDatabase:
 @pytest.fixture(autouse=True)
 def mock_db():
     """Autouse fixture replacing PyMongo get_database with in-memory DB and isolating external calls."""
+    from apps.authentication.services import reset_rate_limits
+
+    reset_rate_limits()
     in_memory_db = InMemoryDatabase()
     with patch("apps.database.client.get_database", return_value=in_memory_db), \
          patch("apps.database.repositories.get_database", return_value=in_memory_db), \
@@ -212,3 +215,4 @@ def mock_db():
          patch("django.conf.settings.RAZORPAY_KEY_ID", ""), \
          patch("django.conf.settings.RAZORPAY_KEY_SECRET", ""):
         yield in_memory_db
+    reset_rate_limits()

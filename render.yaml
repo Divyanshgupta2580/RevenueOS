@@ -47,5 +47,3 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.6-flash
-      - key: TURNSTILE_SECRET_KEY
-        sync: false

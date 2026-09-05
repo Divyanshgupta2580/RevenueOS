@@ -62,7 +62,7 @@ RevenueOS Backend (Django Channels + Daphne ASGI)
 - **Frontend**: Next.js 16 (App Router) + Tailwind CSS + Lucide Icons (zero emojis, fintech typography).
 - **Realtime**: WebSocket RPC & Event Streaming over `/ws/v1/app/` with heartbeat and reconnection.
 - **Payments**: Razorpay Standard Web Checkout modal with server-side order creation and HMAC-SHA256 signature verification.
-- **Security**: Cloudflare Turnstile CAPTCHA verification, Argon2id password hashing, constant-time HMAC validation.
+- **Security**: Argon2id password hashing, sliding-window rate limiting, constant-time HMAC validation.
 
 ---
 
@@ -258,10 +258,10 @@ The Decision Ledger serves as the authoritative audit trail and proof layer for 
 
 ## 9. Security & Privacy Model
 
-- **Zero Secrets in Frontend**: `RAZORPAY_KEY_SECRET`, `GEMINI_API_KEY`, `MONGODB_URI`, `DJANGO_SECRET_KEY`, and `TURNSTILE_SECRET_KEY` are never bundled into client JS.
+- **Zero Secrets in Frontend**: `RAZORPAY_KEY_SECRET`, `GEMINI_API_KEY`, `MONGODB_URI`, and `DJANGO_SECRET_KEY` are never bundled into client JS.
 - **Integer Minor Units**: All monetary values are processed and stored as integer paise (minor units) to eliminate IEEE 754 floating-point errors.
 - **PII Minimization**: No raw credit card numbers, CVVs, or unmasked credentials are ever sent to Gemini or stored.
-- **Cloudflare Turnstile**: Mandatory cryptographic verification on authentication endpoints.
+- **Abuse Prevention**: In-memory sliding-window IP rate limiting (15 req/min login, 10 req/min register) and per-account failed login lockout (5 failures per 300s window).
 - **Anti-Hijacking**: WebSocket connections validate `Origin` against allowed origins.
 
 ---
@@ -280,7 +280,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp ../.env.example .env
-# Fill in your MONGODB_URI, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, GEMINI_API_KEY, and TURNSTILE keys
+# Fill in your MONGODB_URI, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and GEMINI_API_KEY
 python manage.py runserver 0.0.0.0:8000
 ```
 
