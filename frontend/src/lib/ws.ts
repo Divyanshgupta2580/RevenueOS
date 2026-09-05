@@ -48,6 +48,7 @@ export class RevenueWebSocketClient {
 
   // Reconnection state
   private reconnectAttempt = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isExplicitlyClosed = false;
 
@@ -57,6 +58,14 @@ export class RevenueWebSocketClient {
     this.url = url || defaultUrl;
     if (typeof window !== "undefined") {
       (window as unknown as { __REVENUE_WS_CLIENT__?: RevenueWebSocketClient }).__REVENUE_WS_CLIENT__ = this;
+      window.addEventListener("offline", () => {
+        this.setState("OFFLINE");
+      });
+      window.addEventListener("online", () => {
+        if (this.state === "OFFLINE" && !this.isExplicitlyClosed) {
+          this.connect();
+        }
+      });
     }
   }
 
@@ -69,6 +78,10 @@ export class RevenueWebSocketClient {
 
   public connect(): void {
     if (typeof window === "undefined") return; // SSR guard
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      this.setState("OFFLINE");
+      return;
+    }
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
@@ -88,8 +101,9 @@ export class RevenueWebSocketClient {
     }
   }
 
-  public disconnect(): void {
+  public disconnect(reason = "Client disconnect"): void {
     this.isExplicitlyClosed = true;
+    this.reconnectAttempt = 0;
     this.cleanupHeartbeat();
     this.clearReconnectTimer();
 
@@ -101,10 +115,10 @@ export class RevenueWebSocketClient {
     this.pendingRequests.clear();
 
     if (this.ws) {
-      this.ws.close(1000, "Client disconnect");
+      this.ws.close(1000, reason);
       this.ws = null;
     }
-    this.setState("DISCONNECTED");
+    this.setState("CLOSED_INTENTIONALLY");
   }
 
   public getState(): ConnectionState {
@@ -256,18 +270,34 @@ export class RevenueWebSocketClient {
   private handleClose(event: CloseEvent): void {
     this.cleanupHeartbeat();
 
-    if (event.code === 4401) {
-      // Unauthorized: session invalid or expired
-      this.setState("DISCONNECTED");
+    if (this.isExplicitlyClosed) {
+      this.setState("CLOSED_INTENTIONALLY");
       return;
     }
 
-    if (this.isExplicitlyClosed) {
-      this.setState("DISCONNECTED");
-    } else {
-      this.setState("RECONNECTING");
-      this.scheduleReconnect();
+    if (event.code === 4401 || event.code === 4403) {
+      // Unauthorized or forbidden session
+      this.setState("AUTH_FAILED");
+      this.clearReconnectTimer();
+      return;
     }
+
+    // Check if network is offline
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      this.setState("OFFLINE");
+      this.clearReconnectTimer();
+      return;
+    }
+
+    // Handshake abnormal closure (1006) on multiple attempts or max retries reached
+    if (this.reconnectAttempt >= this.MAX_RECONNECT_ATTEMPTS) {
+      this.setState("SERVER_FAILED");
+      this.clearReconnectTimer();
+      return;
+    }
+
+    this.setState("RECONNECTING");
+    this.scheduleReconnect();
   }
 
   private startHeartbeat(): void {
@@ -307,6 +337,12 @@ export class RevenueWebSocketClient {
   }
 
   private scheduleReconnect(): void {
+    if (this.isExplicitlyClosed) return;
+    if (this.reconnectAttempt >= this.MAX_RECONNECT_ATTEMPTS) {
+      this.setState("SERVER_FAILED");
+      return;
+    }
+
     this.clearReconnectTimer();
     this.setState("RECONNECTING");
 
@@ -317,7 +353,9 @@ export class RevenueWebSocketClient {
 
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
-      this.connect();
+      if (!this.isExplicitlyClosed) {
+        this.connect();
+      }
     }, delay);
   }
 

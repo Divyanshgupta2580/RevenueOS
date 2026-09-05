@@ -38,7 +38,7 @@ export default function CommandCenterPage() {
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [loadingDecisions, setLoadingDecisions] = useState(false);
 
-  const { state: connectionState, isConnected, request, send, on } = useWebSocket();
+  const { state: connectionState, isConnected, connect, disconnect, request, send, on } = useWebSocket({ autoConnect: false });
 
   // 1. Session verification on mount
   useEffect(() => {
@@ -54,6 +54,9 @@ export default function CommandCenterPage() {
       .then((data) => {
         if (data?.authenticated && data.user) {
           setUser(data.user);
+          connect();
+        } else {
+          router.push("/login");
         }
       })
       .catch(() => {
@@ -62,7 +65,7 @@ export default function CommandCenterPage() {
       .finally(() => {
         setAuthChecking(false);
       });
-  }, [router]);
+  }, [router, connect]);
 
   // 2. Request fresh data
   const refreshData = useCallback(() => {
@@ -137,6 +140,7 @@ export default function CommandCenterPage() {
   const handleLogout = async () => {
     const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
     try {
+      disconnect("Operator signed out");
       await fetch(`${apiOrigin}/api/auth/logout/`, {
         method: "POST",
         credentials: "include",

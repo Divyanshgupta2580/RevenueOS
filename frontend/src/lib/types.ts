@@ -60,8 +60,12 @@ export interface ServerMessage<T = unknown> {
 export type ConnectionState =
   | "DISCONNECTED"
   | "CONNECTING"
-  | "RECONNECTING"
   | "CONNECTED"
+  | "RECONNECTING"
+  | "OFFLINE"
+  | "AUTH_FAILED"
+  | "SERVER_FAILED"
+  | "CLOSED_INTENTIONALLY"
   | "STALE"
   | "ERROR";
 

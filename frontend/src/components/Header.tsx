@@ -31,42 +31,110 @@ export default function Header({
 }: HeaderProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
-  // Normalize state
-  const isConnected = connectionState === "CONNECTED";
-  const isConnecting = connectionState === "CONNECTING";
-  const isReconnecting = connectionState === "RECONNECTING" || connectionState === "STALE";
-
-  // Tooltip content based on real connection state
+  // Tooltip content and status labels based on real connection state
   const getStatusLabel = () => {
-    if (isConnected) return "Connected";
-    if (isConnecting) return "Connecting";
-    if (isReconnecting) return "Reconnecting";
-    return "Disconnected";
+    switch (connectionState) {
+      case "CONNECTED":
+        return "Connected";
+      case "CONNECTING":
+        return "Connecting";
+      case "RECONNECTING":
+        return "Reconnecting";
+      case "OFFLINE":
+        return "Offline";
+      case "AUTH_FAILED":
+        return "Auth Failed";
+      case "SERVER_FAILED":
+        return "Server Failed";
+      case "CLOSED_INTENTIONALLY":
+      case "DISCONNECTED":
+      default:
+        return "Disconnected";
+    }
+  };
+
+  const getStatusSublabel = () => {
+    switch (connectionState) {
+      case "CONNECTED":
+        return "Real-time stream active";
+      case "CONNECTING":
+        return "Connecting stream";
+      case "RECONNECTING":
+        return "Restoring stream";
+      case "OFFLINE":
+        return "Network offline";
+      case "AUTH_FAILED":
+        return "Session unauthenticated";
+      case "SERVER_FAILED":
+        return "Stream unavailable";
+      case "CLOSED_INTENTIONALLY":
+      case "DISCONNECTED":
+      default:
+        return "Real-time stream inactive";
+    }
   };
 
   const getStatusTooltip = () => {
-    if (isConnected) {
-      return {
-        title: "WebSocket connected",
-        description: "Real-time updates",
-      };
+    switch (connectionState) {
+      case "CONNECTED":
+        return {
+          title: "WebSocket connected",
+          description: "Real-time bidirectional event stream active",
+        };
+      case "CONNECTING":
+        return {
+          title: "Connecting to server",
+          description: "Establishing real-time authenticated session",
+        };
+      case "RECONNECTING":
+        return {
+          title: "Reconnecting to server",
+          description: "Attempting to restore real-time connection with backoff",
+        };
+      case "OFFLINE":
+        return {
+          title: "Network offline",
+          description: "No internet connection detected in browser",
+        };
+      case "AUTH_FAILED":
+        return {
+          title: "Authentication failed",
+          description: "Session is unauthenticated, expired, or origin is unauthorized",
+        };
+      case "SERVER_FAILED":
+        return {
+          title: "Server connection failed",
+          description: "Could not reach Daphne ASGI server after retries",
+        };
+      case "CLOSED_INTENTIONALLY":
+      case "DISCONNECTED":
+      default:
+        return {
+          title: "WebSocket disconnected",
+          description: "Real-time stream inactive",
+        };
     }
-    if (isConnecting) {
-      return {
-        title: "Connecting to server",
-        description: "Establishing real-time session",
-      };
+  };
+
+  const getDotClass = () => {
+    switch (connectionState) {
+      case "CONNECTED":
+        return "bg-teal-400 shadow-[0_0_8px_rgba(20,184,166,0.6)]";
+      case "CONNECTING":
+        return "bg-amber-400 animate-ping";
+      case "RECONNECTING":
+        return "bg-amber-500 animate-pulse";
+      case "OFFLINE":
+        return "bg-zinc-500";
+      case "AUTH_FAILED":
+        return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]";
+      case "SERVER_FAILED":
+        return "bg-rose-600 shadow-[0_0_8px_rgba(225,29,72,0.4)]";
+      case "CLOSED_INTENTIONALLY":
+      case "DISCONNECTED":
+      default:
+        return "bg-zinc-600";
     }
-    if (isReconnecting) {
-      return {
-        title: "Reconnecting to server",
-        description: "Attempting to restore real-time connection",
-      };
-    }
-    return {
-      title: "WebSocket disconnected",
-      description: "Real-time updates unavailable",
-    };
   };
 
   // Derive initials from username or fallback to DG
@@ -166,23 +234,13 @@ export default function Header({
               aria-label={`WebSocket status: ${getStatusLabel()}`}
               className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-[#091021] border border-[#1b263b] text-xs transition-colors hover:border-[#273752] cursor-default focus:outline-none focus:ring-1 focus:ring-blue-500/50"
             >
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  isConnected
-                    ? "bg-teal-400 shadow-[0_0_8px_rgba(20,184,166,0.6)]"
-                    : isConnecting
-                    ? "bg-amber-400 animate-ping"
-                    : isReconnecting
-                    ? "bg-amber-500 animate-pulse"
-                    : "bg-red-500"
-                }`}
-              />
+              <span className={`w-2 h-2 rounded-full shrink-0 ${getDotClass()}`} />
               <div className="flex flex-col text-left">
                 <span className="text-zinc-200 text-[11px] font-medium leading-tight">
                   {getStatusLabel()}
                 </span>
                 <span className="text-[9px] text-zinc-500 leading-tight">
-                  {isConnected ? "Real-time stream active" : "Real-time stream inactive"}
+                  {getStatusSublabel()}
                 </span>
               </div>
             </button>

@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { RevenueWebSocketClient } from "@/lib/ws";
 import { ConnectionState, ServerMessage, ServerMessageType } from "@/lib/types";
 
-export function useWebSocket() {
+interface UseWebSocketOptions {
+  autoConnect?: boolean;
+}
+
+export function useWebSocket(options: UseWebSocketOptions = {}) {
+  const { autoConnect = false } = options;
   const [state, setState] = useState<ConnectionState>("DISCONNECTED");
   const client = RevenueWebSocketClient.getInstance();
 
@@ -14,13 +19,14 @@ export function useWebSocket() {
       setState(newState);
     });
 
-    // Auto-connect on client mount
-    client.connect();
+    if (autoConnect) {
+      client.connect();
+    }
 
     return () => {
       unsubscribeState();
     };
-  }, [client]);
+  }, [client, autoConnect]);
 
   const on = (type: ServerMessageType | "*", handler: (msg: ServerMessage) => void) => {
     return client.on(type, handler);
@@ -31,6 +37,8 @@ export function useWebSocket() {
     isConnected: state === "CONNECTED",
     isConnecting: state === "CONNECTING",
     isStale: state === "STALE",
+    connect: client.connect.bind(client),
+    disconnect: client.disconnect.bind(client),
     request: client.request.bind(client),
     send: client.send.bind(client),
     on,

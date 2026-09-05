@@ -63,7 +63,7 @@ function LoginForm() {
       </div>
 
       {/* Login Card */}
-      <div className="bg-[#0e1117] border border-[#21262d] rounded-xl p-6 shadow-xl">
+      <div className="bg-[#091021] border border-[#1b263b] rounded-xl p-6 shadow-2xl">
         {isJustRegistered && (
           <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-md text-xs text-emerald-300 font-medium flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -89,7 +89,7 @@ function LoginForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="operator@example.com"
-                className="w-full pl-9 pr-3 py-2 bg-zinc-900 border border-zinc-700 rounded-md text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition-colors"
+                className="w-full pl-9 pr-3 py-2 bg-[#0c1427] border border-[#1b263b] rounded-md text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
           </div>
@@ -105,7 +105,7 @@ function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className="w-full pl-9 pr-3 py-2 bg-zinc-900 border border-zinc-700 rounded-md text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition-colors"
+                className="w-full pl-9 pr-3 py-2 bg-[#0c1427] border border-[#1b263b] rounded-md text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
           </div>
@@ -113,7 +113,7 @@ function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 px-4 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
+            className="w-full py-2.5 px-4 rounded-md bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4 shadow-sm"
           >
             {loading ? (
               "Authenticating..."
@@ -127,7 +127,7 @@ function LoginForm() {
         </form>
 
         {/* Link to Register */}
-        <div className="mt-5 pt-4 border-t border-zinc-800 text-center">
+        <div className="mt-5 pt-4 border-t border-[#1b263b] text-center">
           <p className="text-xs text-zinc-400">
             Need an operator account?{" "}
             <Link
@@ -150,7 +150,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-[#08090b] flex flex-col justify-center items-center p-4">
+    <div className="min-h-screen bg-[#070b16] flex flex-col justify-center items-center p-4">
       <Suspense fallback={<div className="text-zinc-500 text-xs">Loading login...</div>}>
         <LoginForm />
       </Suspense>

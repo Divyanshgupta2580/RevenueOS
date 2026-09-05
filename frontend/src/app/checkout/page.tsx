@@ -15,7 +15,7 @@ export default function CheckoutPage() {
   const [metrics, setMetrics] = useState<MetricSummary | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
 
-  const { state: connectionState, isConnected, send, on } = useWebSocket();
+  const { state: connectionState, isConnected, connect, disconnect, send, on } = useWebSocket({ autoConnect: false });
 
   // Session verification on mount
   useEffect(() => {
@@ -31,12 +31,15 @@ export default function CheckoutPage() {
       .then((data) => {
         if (data?.authenticated && data.user) {
           setUser(data.user);
+          connect();
+        } else {
+          router.push("/login");
         }
       })
       .catch(() => {
         router.push("/login");
       });
-  }, [router]);
+  }, [router, connect]);
 
   // Request fresh metrics
   const refreshData = useCallback(() => {
@@ -73,6 +76,7 @@ export default function CheckoutPage() {
   const handleLogout = async () => {
     const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
     try {
+      disconnect("Operator signed out");
       await fetch(`${apiOrigin}/api/auth/logout/`, {
         method: "POST",
         credentials: "include",

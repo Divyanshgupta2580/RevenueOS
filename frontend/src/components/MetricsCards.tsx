@@ -22,7 +22,7 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 my-6">
       {/* 1. Revenue At Risk */}
-      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+      <div className="p-4 rounded-xl bg-gradient-to-b from-[#140b14]/80 to-[#091021] border border-rose-500/25 hover:border-rose-500/40 transition-colors relative overflow-hidden shadow-sm flex flex-col justify-between">
         <div>
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2.5">
@@ -49,7 +49,7 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
       </div>
 
       {/* 2. Expected Recoverable */}
-      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+      <div className="p-4 rounded-xl bg-gradient-to-b from-[#141209]/80 to-[#091021] border border-amber-500/25 hover:border-amber-500/40 transition-colors relative overflow-hidden shadow-sm flex flex-col justify-between">
         <div>
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2.5">
@@ -76,7 +76,7 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
       </div>
 
       {/* 3. Actually Recovered */}
-      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+      <div className="p-4 rounded-xl bg-gradient-to-b from-[#081514]/80 to-[#091021] border border-teal-500/25 hover:border-teal-500/40 transition-colors relative overflow-hidden shadow-sm flex flex-col justify-between">
         <div>
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2.5">
@@ -88,7 +88,7 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
               </span>
             </div>
             <div className="text-teal-500/70 shrink-0">
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="text-2xl font-bold tracking-tight text-teal-400 font-mono">
@@ -102,18 +102,18 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
           <div className="flex items-center justify-between">
             <span className="text-zinc-500">Attribution:</span>
             <span className={isTinySample ? "text-amber-400/90 font-medium" : "text-teal-400"}>
-              {isTinySample ? "Insufficient sample size" : "Measured"}
+              {isTinySample ? "Insufficient sample" : "Measured"}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-zinc-500">Baseline comparison:</span>
+            <span className="text-zinc-500">Baseline:</span>
             <span className="text-zinc-400">Illustrative</span>
           </div>
         </div>
       </div>
 
       {/* 4. Estimated Lift */}
-      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+      <div className="p-4 rounded-xl bg-gradient-to-b from-[#0a1222]/80 to-[#091021] border border-blue-500/25 hover:border-blue-500/40 transition-colors relative overflow-hidden shadow-sm flex flex-col justify-between">
         <div>
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2.5">
@@ -137,30 +137,30 @@ export default function MetricsCards({ metrics, loading }: MetricsCardsProps) {
           <div className="flex items-center justify-between">
             <span className="text-zinc-500">Significance:</span>
             <span className={isTinySample ? "text-amber-400/90 font-medium" : "text-cyan-400"}>
-              {isTinySample ? "INSUFFICIENT SAMPLE SIZE" : "Statistically valid"}
+              {isTinySample ? "Insufficient sample" : "Statistically valid"}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-zinc-500">Baseline assumption:</span>
+            <span className="text-zinc-500">Baseline:</span>
             <span className="text-zinc-400">8% heuristic</span>
           </div>
         </div>
       </div>
 
       {/* 5. Recovery Rate */}
-      <div className="p-4 rounded-xl bg-[#091021] border border-[#1b263b] relative overflow-hidden shadow-sm flex flex-col justify-between">
+      <div className="p-4 rounded-xl bg-gradient-to-b from-[#120a1f]/80 to-[#091021] border border-purple-500/25 hover:border-purple-500/40 transition-colors relative overflow-hidden shadow-sm flex flex-col justify-between">
         <div>
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
                 <Percent className="w-4 h-4" />
               </div>
               <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 font-medium">
                 RECOVERY RATE
               </span>
             </div>
-            <div className="text-indigo-500/70 shrink-0">
-              <Percent className="w-3.5 h-3.5" />
+            <div className="text-purple-500/70 shrink-0">
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="text-2xl font-bold tracking-tight text-white font-mono">
