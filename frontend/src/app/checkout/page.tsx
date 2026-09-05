@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { FlaskConical } from "lucide-react";
 import Header from "@/components/Header";
@@ -17,8 +17,12 @@ export default function CheckoutPage() {
 
   const { state: connectionState, isConnected, connect, disconnect, send, on } = useWebSocket({ autoConnect: false });
 
+  const hasCheckedAuthRef = useRef(false);
+
   // Session verification on mount
   useEffect(() => {
+    if (hasCheckedAuthRef.current) return;
+    hasCheckedAuthRef.current = true;
     const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
     fetch(`${apiOrigin}/api/auth/me/`, { credentials: "include" })
       .then((res) => {
@@ -29,7 +33,7 @@ export default function CheckoutPage() {
         return res.json();
       })
       .then((data) => {
-        if (data?.authenticated && data.user) {
+        if (data?.user) {
           setUser(data.user);
           connect();
         } else {

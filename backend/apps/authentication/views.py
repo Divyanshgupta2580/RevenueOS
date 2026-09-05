@@ -265,6 +265,7 @@ def login_view(request: HttpRequest) -> HttpResponse:
 
     response = JsonResponse(
         {
+            "authenticated": True,
             "status": "authenticated",
             "user": {
                 "id": str(user["_id"]),
@@ -347,11 +348,13 @@ def me_view(request: HttpRequest) -> HttpResponse:
         request,
         JsonResponse(
             {
+                "authenticated": True,
+                "status": "authenticated",
                 "user": {
                     "id": session.get("user_id"),
                     "username": session.get("username"),
                     "role": session.get("role"),
-                }
+                },
             }
         ),
     )

@@ -40,8 +40,13 @@ export default function CommandCenterPage() {
 
   const { state: connectionState, isConnected, connect, disconnect, request, send, on } = useWebSocket({ autoConnect: false });
 
+  const hasCheckedAuthRef = useRef(false);
+
   // 1. Session verification on mount
   useEffect(() => {
+    if (hasCheckedAuthRef.current) return;
+    hasCheckedAuthRef.current = true;
+
     const apiOrigin = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:8000";
     fetch(`${apiOrigin}/api/auth/me/`, { credentials: "include" })
       .then((res) => {
@@ -52,7 +57,7 @@ export default function CommandCenterPage() {
         return res.json();
       })
       .then((data) => {
-        if (data?.authenticated && data.user) {
+        if (data?.user) {
           setUser(data.user);
           connect();
         } else {
