@@ -134,8 +134,8 @@ class RecoveryBrainInput(BaseModel):
     system_state: SystemStateData | None = None
 
 
-class RecoveryBrainOutput(BaseModel):
-    """Strictly validated structured output from the Recovery Brain."""
+class GeminiBrainRecommendation(BaseModel):
+    """Clean structured output schema for Gemini model (primitives only)."""
 
     action: Literal["RETRY", "PAYMENT_LINK", "REMINDER", "STOP"]
     confidence: float = Field(ge=0.0, le=1.0)
@@ -144,13 +144,20 @@ class RecoveryBrainOutput(BaseModel):
     supporting_factors: list[str] = Field(default_factory=list)
     risk_factors: list[str] = Field(default_factory=list)
     stop_rationale: str | None = None
-    is_fallback: bool = False
-    latency_ms: float | None = None
 
     @field_validator("confidence")
     @classmethod
     def round_confidence(cls, v: float) -> float:
         return round(v, 4)
+
+
+class RecoveryBrainOutput(GeminiBrainRecommendation):
+    """Full logical AI decision output including backend telemetry and fallback status."""
+
+    is_fallback: bool = False
+    fallback_reason: str | None = None
+    latency_ms: float | None = None
+    telemetry: dict[str, float] | None = None
 
 
 class DecisionContextEnvelope(BaseModel):

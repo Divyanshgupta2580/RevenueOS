@@ -20,6 +20,7 @@ export type ServerMessageType =
   | "revenue.details.response"
   | "revenue.updated"
   | "analysis.started"
+  | "analysis.stage"
   | "analysis.completed"
   | "recovery.approved"
   | "recovery.blocked"
@@ -167,6 +168,16 @@ export interface BrainRecommendation {
   riskFactors: string[];
   reasoningSummary: string;
   latency_ms?: number;
+  is_fallback?: boolean;
+  fallback_reason?: string;
+  telemetry?: {
+    context_build_ms?: number;
+    gemini_request_ms?: number;
+    schema_validation_ms?: number;
+    policy_validation_ms?: number;
+    persistence_ms?: number;
+    total_decision_ms?: number;
+  };
 }
 
 export interface RuleEvaluation {

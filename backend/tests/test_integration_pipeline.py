@@ -100,8 +100,10 @@ async def test_full_end_to_end_recovery_pipeline(client: Client, mock_db, webhoo
         start_msg = json.loads(await communicator.receive_from())
         assert start_msg["type"] == "analysis.started"
 
-        # analysis.completed
+        # analysis.completed (drain intermediate stage messages if present)
         complete_msg = json.loads(await communicator.receive_from())
+        while complete_msg.get("type") == "analysis.stage":
+            complete_msg = json.loads(await communicator.receive_from())
         assert complete_msg["type"] == "analysis.completed"
         rec = complete_msg["payload"]["recommendation"]
         assert rec["action"] == "PAYMENT_LINK"

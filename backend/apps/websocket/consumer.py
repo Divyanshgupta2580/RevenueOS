@@ -34,6 +34,7 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
         self.user_session_id: str = ""
         self.last_activity: datetime = datetime.now(UTC)
         self._processed_executions: set[str] = set()
+        self._in_flight_analyses: set[str] = set()
 
     async def connect(self) -> None:
         """Handshake authentication, origin check, and group join."""
@@ -221,52 +222,129 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
                 return
 
             pid = str(payment_id)
-            await self.send(
-                text_data=build_response(
-                    "analysis.started",
-                    {"paymentId": pid},
-                    request_id=request_id,
-                )
-            )
 
-            from asgiref.sync import sync_to_async
+            # Prevent duplicate in-flight analysis requests
+            if pid in self._in_flight_analyses:
+                logger.info("Duplicate in-flight analysis requested for %s; skipping duplicate", pid)
+                return
+            self._in_flight_analyses.add(pid)
 
-            from apps.brain.service import RecoveryBrainService
-            from apps.database.repositories import PaymentRepository
-
-            payment = await sync_to_async(PaymentRepository.get_by_id)(pid)
-            if not payment:
+            try:
                 await self.send(
-                    text_data=build_error(
-                        "NOT_FOUND",
-                        f"Payment with ID '{pid}' was not found.",
+                    text_data=build_response(
+                        "analysis.started",
+                        {"paymentId": pid},
                         request_id=request_id,
                     )
                 )
-                return
 
-            brain_svc = RecoveryBrainService()
-            recommendation = await brain_svc.analyze_payment_async(payment)
-            result = (
-                recommendation.model_dump()
-                if hasattr(recommendation, "model_dump")
-                else dict(recommendation)
-            )
-
-            from apps.brain.config import get_configured_gemini_model
-            configured_model = get_configured_gemini_model()
-
-            await self.send(
-                text_data=build_response(
-                    "analysis.completed",
-                    {
-                        "paymentId": pid,
-                        "recommendation": result,
-                        "modelVersion": configured_model,
-                    },
-                    request_id=request_id,
+                # Stage 1: BUILDING DECISION CONTEXT
+                await self.send(
+                    text_data=build_response(
+                        "analysis.stage",
+                        {
+                            "paymentId": pid,
+                            "stage": "BUILDING DECISION CONTEXT",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                        request_id=request_id,
+                    )
                 )
-            )
+
+                from asgiref.sync import sync_to_async
+
+                from apps.brain.service import RecoveryBrainService
+                from apps.database.repositories import PaymentRepository
+
+                payment = await sync_to_async(PaymentRepository.get_by_id)(pid)
+                if not payment:
+                    await self.send(
+                        text_data=build_error(
+                            "NOT_FOUND",
+                            f"Payment with ID '{pid}' was not found.",
+                            request_id=request_id,
+                        )
+                    )
+                    return
+
+                # Stage 2: ANALYZING WITH GEMINI
+                await self.send(
+                    text_data=build_response(
+                        "analysis.stage",
+                        {
+                            "paymentId": pid,
+                            "stage": "ANALYZING WITH GEMINI",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                        request_id=request_id,
+                    )
+                )
+
+                brain_svc = RecoveryBrainService()
+                recommendation = await brain_svc.analyze_payment_async(payment)
+
+                # Stage 3: VALIDATING RECOMMENDATION
+                await self.send(
+                    text_data=build_response(
+                        "analysis.stage",
+                        {
+                            "paymentId": pid,
+                            "stage": "VALIDATING RECOMMENDATION",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                        request_id=request_id,
+                    )
+                )
+
+                # Stage 4: CHECKING POLICY
+                await self.send(
+                    text_data=build_response(
+                        "analysis.stage",
+                        {
+                            "paymentId": pid,
+                            "stage": "CHECKING POLICY",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                        request_id=request_id,
+                    )
+                )
+
+                # Stage 5: DECISION READY
+                await self.send(
+                    text_data=build_response(
+                        "analysis.stage",
+                        {
+                            "paymentId": pid,
+                            "stage": "DECISION READY",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                        request_id=request_id,
+                    )
+                )
+
+                result = (
+                    recommendation.model_dump()
+                    if hasattr(recommendation, "model_dump")
+                    else dict(recommendation)
+                )
+
+                from apps.brain.config import get_configured_gemini_model
+                configured_model = get_configured_gemini_model()
+
+                await self.send(
+                    text_data=build_response(
+                        "analysis.completed",
+                        {
+                            "paymentId": pid,
+                            "recommendation": result,
+                            "telemetry": recommendation.telemetry or {},
+                            "modelVersion": configured_model,
+                        },
+                        request_id=request_id,
+                    )
+                )
+            finally:
+                self._in_flight_analyses.discard(pid)
             return
 
         if msg_type == "recovery.execute":

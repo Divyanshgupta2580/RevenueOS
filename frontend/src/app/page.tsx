@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { FlaskConical } from "lucide-react";
 import Header from "@/components/Header";
@@ -147,17 +147,57 @@ export default function CommandCenterPage() {
     router.push("/login");
   };
 
-  // 6. Gemini Recovery Brain invocation
-  const handleAnalyzeOpportunity = async (paymentId: string): Promise<BrainRecommendation | null> => {
+  const inFlightAnalysesRef = useRef<Set<string>>(new Set());
+
+  // 6. Gemini Recovery Brain invocation with real stage listener and in-flight deduplication
+  const handleAnalyzeOpportunity = async (
+    paymentId: string,
+    onStageUpdate?: (stage: string) => void
+  ): Promise<BrainRecommendation | null> => {
+    if (inFlightAnalysesRef.current.has(paymentId)) {
+      console.warn(`[RecoveryBrain] Analysis already in-flight for ${paymentId}; dropping duplicate request.`);
+      return null;
+    }
+    inFlightAnalysesRef.current.add(paymentId);
+
+    // Register real stage listener for this payment
+    const unsubStage = on("analysis.stage", (msg: ServerMessage) => {
+      const p = msg.payload as { paymentId?: string; stage?: string } | undefined;
+      if (p && p.paymentId === paymentId && p.stage && onStageUpdate) {
+        onStageUpdate(p.stage);
+      }
+    });
+
     try {
-      const resp = await request<{ paymentId: string }, { recommendation?: BrainRecommendation }>(
+      const resp = await request<
+        { paymentId: string },
+        { recommendation?: BrainRecommendation; telemetry?: Record<string, number> }
+      >(
         "recovery.analyze",
         { paymentId },
-        12000
+        35000
       );
-      return resp.payload?.recommendation || null;
-    } catch {
-      return null;
+      const rec = resp.payload?.recommendation || null;
+      if (rec && resp.payload?.telemetry) {
+        rec.telemetry = resp.payload.telemetry;
+      }
+      return rec;
+    } catch (err) {
+      console.error("[RecoveryBrain] Analysis request failed or timed out:", err);
+      return {
+        action: "STOP",
+        confidence: 0.0,
+        expectedRecoveryValuePaise: 0,
+        reason: "AI service temporarily unavailable or request timed out.",
+        supportingFactors: [],
+        riskFactors: ["External service timeout or unavailable"],
+        reasoningSummary: "AI service unavailable; fallback recommended.",
+        is_fallback: true,
+        fallback_reason: "AI SERVICE UNAVAILABLE",
+      };
+    } finally {
+      unsubStage();
+      inFlightAnalysesRef.current.delete(paymentId);
     }
   };
 

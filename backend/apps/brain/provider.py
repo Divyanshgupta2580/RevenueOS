@@ -62,10 +62,12 @@ class GeminiProvider:
 
     def _build_generation_config(self) -> types.GenerateContentConfig:
         """Construct generation config with structured schema and low temperature."""
+        from apps.brain.schemas import GeminiBrainRecommendation
+
         return types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
-            response_schema=RecoveryBrainOutput,
+            response_schema=GeminiBrainRecommendation,
             temperature=0.1,  # Low temperature for deterministic financial decision support
             max_output_tokens=1500,  # Generous token budget for complete structured Pydantic schema
         )
@@ -98,19 +100,27 @@ class GeminiProvider:
         t_start = time.perf_counter()
 
         try:
+            t_gemini_start = time.perf_counter()
             response = await client.aio.models.generate_content(
                 model=str(self.model_name),
                 contents=prompt,
                 config=config,
             )
+            gemini_request_ms = round((time.perf_counter() - t_gemini_start) * 1000, 2)
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
 
+            t_schema_start = time.perf_counter()
             text = self._clean_json_text(response.text)
             raw_data = json.loads(text)
 
             # Strict Pydantic validation
             output = RecoveryBrainOutput(**raw_data)
+            schema_validation_ms = round((time.perf_counter() - t_schema_start) * 1000, 2)
             output.latency_ms = elapsed_ms
+            output.telemetry = {
+                "gemini_request_ms": gemini_request_ms,
+                "schema_validation_ms": schema_validation_ms,
+            }
 
             # Safe observability tracking
             in_tokens = 0
@@ -138,6 +148,11 @@ class GeminiProvider:
                 input_ctx, reason=f"Model response validation error: {exc}"
             )
             fallback.latency_ms = elapsed_ms
+            fallback.fallback_reason = "Model response validation error"
+            fallback.telemetry = {
+                "gemini_request_ms": elapsed_ms,
+                "schema_validation_ms": 0.0,
+            }
             return fallback
         except Exception as exc:
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
@@ -147,6 +162,11 @@ class GeminiProvider:
                 input_ctx, reason=f"Gemini service unavailable: {exc}"
             )
             fallback.latency_ms = elapsed_ms
+            fallback.fallback_reason = "Gemini service unavailable"
+            fallback.telemetry = {
+                "gemini_request_ms": elapsed_ms,
+                "schema_validation_ms": 0.0,
+            }
             return fallback
 
     def generate_recommendation(
@@ -163,19 +183,27 @@ class GeminiProvider:
         t_start = time.perf_counter()
 
         try:
+            t_gemini_start = time.perf_counter()
             response = client.models.generate_content(
                 model=str(self.model_name),
                 contents=prompt,
                 config=config,
             )
+            gemini_request_ms = round((time.perf_counter() - t_gemini_start) * 1000, 2)
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
 
+            t_schema_start = time.perf_counter()
             text = self._clean_json_text(response.text)
             raw_data = json.loads(text)
 
             # Strict Pydantic validation
             output = RecoveryBrainOutput(**raw_data)
+            schema_validation_ms = round((time.perf_counter() - t_schema_start) * 1000, 2)
             output.latency_ms = elapsed_ms
+            output.telemetry = {
+                "gemini_request_ms": gemini_request_ms,
+                "schema_validation_ms": schema_validation_ms,
+            }
 
             # Safe observability tracking
             in_tokens = 0
@@ -203,6 +231,11 @@ class GeminiProvider:
                 input_ctx, reason=f"Model response validation error: {exc}"
             )
             fallback.latency_ms = elapsed_ms
+            fallback.fallback_reason = "Model response validation error"
+            fallback.telemetry = {
+                "gemini_request_ms": elapsed_ms,
+                "schema_validation_ms": 0.0,
+            }
             return fallback
         except Exception as exc:
             elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
@@ -212,6 +245,11 @@ class GeminiProvider:
                 input_ctx, reason=f"Gemini service unavailable: {exc}"
             )
             fallback.latency_ms = elapsed_ms
+            fallback.fallback_reason = "Gemini service unavailable"
+            fallback.telemetry = {
+                "gemini_request_ms": elapsed_ms,
+                "schema_validation_ms": 0.0,
+            }
             return fallback
 
     @staticmethod
