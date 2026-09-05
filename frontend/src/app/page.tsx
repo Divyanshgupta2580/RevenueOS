@@ -391,6 +391,8 @@ export default function CommandCenterPage() {
                 loading={loadingDecisions}
                 onExplain={handleExplainDecision}
                 onRefresh={refreshData}
+                onNavigateToRadar={() => setActiveTab("radar")}
+                onNavigateToMetrics={() => setActiveTab("metrics")}
               />
             )}
 
@@ -415,6 +417,10 @@ export default function CommandCenterPage() {
           onInspectDecision={() => {
             setSelectedOpp(null);
             setActiveTab("ledger");
+          }}
+          onNavigateToMetrics={() => {
+            setSelectedOpp(null);
+            setActiveTab("metrics");
           }}
         />
       </main>

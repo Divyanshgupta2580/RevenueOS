@@ -42,19 +42,15 @@ class RecoveryBrainService:
     def __init__(self, provider: GeminiProvider | None = None) -> None:
         self.provider = provider or GeminiProvider()
 
-    def build_decision_context(
-        self,
+    @classmethod
+    def _compile_decision_context(
+        cls,
         payment: dict[str, Any],
-        now: datetime | None = None,
+        now: datetime,
+        cust_hist: dict[str, Any] | None = None,
+        action_history: list[dict[str, Any]] | None = None,
     ) -> RecoveryBrainInput:
-        """Construct a deterministic, structured Decision Context before calling Gemini.
-
-        Strictly incorporates verified application data and pre-calculated arithmetic.
-        Excludes all secrets, tokens, and payment credentials.
-        """
-        if now is None:
-            now = datetime.now(UTC)
-
+        """Compile structured Decision Context from payment data and pre-fetched history."""
         payment_id = str(payment.get("payment_id", ""))
         amount = validate_minor_units(int(payment.get("amount", 0)))
         currency = str(payment.get("currency", "INR"))
@@ -109,10 +105,12 @@ class RecoveryBrainService:
         )
 
         # 2. Customer History (Sanitized Aggregates)
-        try:
-            cust_hist = PaymentRepository.get_customer_history(customer_id)
-            customer_history = CustomerHistoryData(**cust_hist)
-        except Exception:
+        if cust_hist:
+            try:
+                customer_history = CustomerHistoryData(**cust_hist)
+            except Exception:
+                customer_history = CustomerHistoryData(customer_id=customer_id)
+        else:
             customer_history = CustomerHistoryData(customer_id=customer_id)
 
         # 3. Payment Failure Context
@@ -135,12 +133,8 @@ class RecoveryBrainService:
         )
 
         # 4. Recovery History
-        try:
-            action_history = ActionRepository.get_payment_action_history(payment_id)
-        except Exception:
-            action_history = []
-
-        last_action = action_history[0] if action_history else None
+        act_hist = action_history or []
+        last_action = act_hist[0] if act_hist else None
         cooldown_seconds = 300
         cooldown_active = False
         cooldown_remaining = 0
@@ -156,7 +150,7 @@ class RecoveryBrainService:
                     cooldown_remaining = int(cooldown_seconds - elapsed_sec)
 
         recovery_history = RecoveryHistoryData(
-            actions_attempted_count=len(action_history),
+            actions_attempted_count=len(act_hist),
             last_action_type=last_action.get("action_type") if last_action else None,
             last_action_timestamp_iso=(
                 last_action["executed_at"].isoformat()
@@ -172,7 +166,7 @@ class RecoveryBrainService:
                     "status": a.get("status"),
                     "outcome": a.get("outcome"),
                 }
-                for a in action_history[:3]
+                for a in act_hist[:3]
             ],
         )
 
@@ -257,6 +251,66 @@ class RecoveryBrainService:
             economic_context=economic_context,
             temporal_context=temporal_context,
             system_state=system_state,
+        )
+
+    def build_decision_context(
+        self,
+        payment: dict[str, Any],
+        now: datetime | None = None,
+    ) -> RecoveryBrainInput:
+        """Construct a deterministic, structured Decision Context before calling Gemini.
+
+        Strictly incorporates verified application data and pre-calculated arithmetic.
+        Excludes all secrets, tokens, and payment credentials.
+        """
+        if now is None:
+            now = datetime.now(UTC)
+
+        customer_id = str(payment.get("customer_id") or "unknown")
+        payment_id = str(payment.get("payment_id", ""))
+
+        try:
+            cust_hist = PaymentRepository.get_customer_history(customer_id)
+        except Exception:
+            cust_hist = {}
+
+        try:
+            action_history = ActionRepository.get_payment_action_history(payment_id)
+        except Exception:
+            action_history = []
+
+        return self._compile_decision_context(
+            payment=payment,
+            now=now,
+            cust_hist=cust_hist,
+            action_history=action_history,
+        )
+
+    async def build_decision_context_async(
+        self,
+        payment: dict[str, Any],
+        now: datetime | None = None,
+    ) -> RecoveryBrainInput:
+        """Construct Decision Context asynchronously by running MongoDB lookups concurrently."""
+        if now is None:
+            now = datetime.now(UTC)
+
+        customer_id = str(payment.get("customer_id") or "unknown")
+        payment_id = str(payment.get("payment_id", ""))
+
+        # Concurrently fetch customer history and action history in worker threads
+        cust_task = asyncio.to_thread(PaymentRepository.get_customer_history, customer_id)
+        act_task = asyncio.to_thread(ActionRepository.get_payment_action_history, payment_id)
+        cust_res, act_res = await asyncio.gather(cust_task, act_task, return_exceptions=True)
+
+        cust_hist = cust_res if isinstance(cust_res, dict) else {}
+        action_history = act_res if isinstance(act_res, list) else []
+
+        return self._compile_decision_context(
+            payment=payment,
+            now=now,
+            cust_hist=cust_hist,
+            action_history=action_history,
         )
 
     @staticmethod
@@ -398,7 +452,7 @@ class RecoveryBrainService:
 
         t0 = time.perf_counter()
         t_ctx = time.perf_counter()
-        input_ctx = self.build_decision_context(payment, now=now)
+        input_ctx = await self.build_decision_context_async(payment, now=now)
         context_build_ms = round((time.perf_counter() - t_ctx) * 1000, 2)
 
         # Deterministic short-circuit check: skips Gemini entirely if facts dictate STOP

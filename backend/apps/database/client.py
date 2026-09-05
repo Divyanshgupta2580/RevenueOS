@@ -80,11 +80,12 @@ def init_database_indexes(db: Any | None = None) -> dict[str, list[str]]:
         db["sessions"].create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
         created_indexes["sessions"] = ["session_token_1", "expires_at_1"]
 
-        # 3. payments: unique payment_id, compound status + updated_at
+        # 3. payments: unique payment_id, compound status + updated_at, customer_id
         db["payments"].create_index([("payment_id", ASCENDING)], unique=True)
         db["payments"].create_index([("status", ASCENDING), ("updated_at", DESCENDING)])
         db["payments"].create_index([("recovery_status", ASCENDING)])
-        created_indexes["payments"] = ["payment_id_1", "status_1_updated_at_-1", "recovery_status_1"]
+        db["payments"].create_index([("customer_id", ASCENDING)])
+        created_indexes["payments"] = ["payment_id_1", "status_1_updated_at_-1", "recovery_status_1", "customer_id_1"]
 
         # 4. recovery_decisions: unique decision_id, lookup by payment_id
         db["recovery_decisions"].create_index([("decision_id", ASCENDING)], unique=True)

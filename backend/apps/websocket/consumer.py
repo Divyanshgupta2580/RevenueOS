@@ -226,6 +226,13 @@ class RevenueOSConsumer(AsyncWebsocketConsumer):
             # Prevent duplicate in-flight analysis requests
             if pid in self._in_flight_analyses:
                 logger.info("Duplicate in-flight analysis requested for %s; skipping duplicate", pid)
+                await self.send(
+                    text_data=build_error(
+                        "DUPLICATE_IN_FLIGHT",
+                        f"Analysis for payment '{pid}' is already in progress.",
+                        request_id=request_id,
+                    )
+                )
                 return
             self._in_flight_analyses.add(pid)
 

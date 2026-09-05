@@ -132,6 +132,10 @@ def check_duplicate_execution(idempotency_key: str | None) -> PolicyEvaluationRe
     if not idempotency_key:
         return PolicyEvaluationResult(False, "DUPLICATE_EXECUTION", "Idempotency key is required.")
 
+    # Read-only policy previews and dry-run validations skip duplicate execution database lookup
+    if idempotency_key.startswith("preview_") or idempotency_key.startswith("dry_run_"):
+        return PolicyEvaluationResult(True, "DUPLICATE_EXECUTION", "Action preview is unique.")
+
     existing = ActionRepository.get_by_idempotency_key(idempotency_key)
     if existing:
         return PolicyEvaluationResult(

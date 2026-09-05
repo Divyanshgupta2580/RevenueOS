@@ -157,8 +157,11 @@ CSRF_COOKIE_SECURE = not DEBUG
 TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
 TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
 
-# Google Gemini API
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Google Gemini API (Multi-Key Failover Support)
+GEMINI_API_KEY_1 = os.environ.get("GEMINI_API_KEY_1", "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_API_KEY_2 = os.environ.get("GEMINI_API_KEY_2", "").strip()
+GEMINI_API_KEY_3 = os.environ.get("GEMINI_API_KEY_3", "").strip()
+GEMINI_API_KEY = GEMINI_API_KEY_1  # Backward compatibility alias
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 # Razorpay Test Mode

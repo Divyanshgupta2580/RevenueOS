@@ -52,6 +52,7 @@ interface OpportunityDrawerProps {
   onExplain?: (decisionId: string) => Promise<ExplanationData | null>;
   decisions?: DecisionRecord[];
   onInspectDecision?: (paymentId: string, decisionId?: string) => void;
+  onNavigateToMetrics?: () => void;
 }
 
 type AIProcessingStage =
@@ -74,6 +75,7 @@ export default function OpportunityDrawer({
   onExplain,
   decisions = [],
   onInspectDecision,
+  onNavigateToMetrics,
 }: OpportunityDrawerProps) {
   const [analyzing, setAnalyzing] = useState(false);
   const [aiStage, setAiStage] = useState<AIProcessingStage>("IDLE");
@@ -1219,7 +1221,7 @@ export default function OpportunityDrawer({
 
           {/* Execution Result Feedback */}
           {executionResult && (
-            <div className="p-3 rounded-lg bg-[#070b16] border border-[#1b263b] text-xs font-mono">
+            <div className="p-3 rounded-lg bg-[#070b16] border border-[#1b263b] text-xs font-mono space-y-2.5">
               {executionResult.status === "APPROVED" || executionResult.status === "EXECUTED" ? (
                 <div className="flex items-center gap-2 text-teal-400 font-medium">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -1238,6 +1240,28 @@ export default function OpportunityDrawer({
                   Status: {executionResult.status}
                 </div>
               )}
+
+              {/* Seamless Next-Step Journey Navigation */}
+              <div className="pt-2 border-t border-[#162133] flex flex-wrap items-center justify-between gap-2">
+                {onInspectDecision && (
+                  <button
+                    onClick={() => onInspectDecision(opportunity.paymentId, currentDecisionId || undefined)}
+                    className="px-2.5 py-1 text-[11px] rounded bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-colors flex items-center gap-1"
+                  >
+                    <span>View Decision in Ledger</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+                {onNavigateToMetrics && (
+                  <button
+                    onClick={onNavigateToMetrics}
+                    className="px-2.5 py-1 text-[11px] rounded bg-[#0e172a] hover:bg-[#15233e] text-zinc-300 border border-[#20314f] transition-colors flex items-center gap-1"
+                  >
+                    <span>Inspect Outcome Metrics</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

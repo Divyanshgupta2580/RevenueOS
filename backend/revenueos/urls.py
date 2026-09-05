@@ -13,7 +13,7 @@ from apps.webhooks.views import razorpay_webhook_view
 
 
 def health_check(request) -> JsonResponse:
-    """Unauthenticated health endpoint for deployment probes."""
+    """Unauthenticated liveness endpoint for deployment and process probes."""
     return JsonResponse(
         {
             "status": "healthy",
@@ -25,35 +25,49 @@ def health_check(request) -> JsonResponse:
 
 def readiness_check(request) -> JsonResponse:
     """Readiness probe checking critical service components and database connection."""
-    from apps.database.client import get_database
+    from apps.database.client import ping_database
+
     try:
-        db = get_database()
-        # Test collection access
-        _ = db.users.count_documents({})
-        return JsonResponse(
-            {
-                "status": "ready",
-                "service": "RevenueOS Backend",
-                "database": "connected",
-            },
-            status=200,
-        )
-    except Exception as exc:
+        is_healthy = ping_database()
+        if is_healthy:
+            return JsonResponse(
+                {
+                    "status": "ready",
+                    "service": "RevenueOS Backend",
+                    "database": "connected",
+                },
+                status=200,
+            )
+        else:
+            return JsonResponse(
+                {
+                    "status": "degraded",
+                    "service": "RevenueOS Backend",
+                    "database": "disconnected",
+                    "error": "Database connectivity check failed",
+                },
+                status=503,
+            )
+    except Exception:
         return JsonResponse(
             {
                 "status": "degraded",
                 "service": "RevenueOS Backend",
                 "database": "disconnected",
-                "error": str(exc),
+                "error": "Database connectivity check failed",
             },
             status=503,
         )
 
 
 urlpatterns = [
-    # Probes
+    # Probes (Liveness & Readiness)
+    path("api/health/", health_check, name="api_health"),
+    path("api/health", health_check, name="api_health_noslash"),
     path("health/", health_check, name="health"),
+    path("health", health_check, name="health_noslash"),
     path("ready/", readiness_check, name="ready"),
+    path("ready", readiness_check, name="ready_noslash"),
     # Authentication
     path("api/auth/register/", register_view, name="auth_register"),
     path("api/auth/register", register_view, name="auth_register_noslash"),

@@ -50,7 +50,10 @@ Render Web Service (Django Channels + Uvicorn)
 | `RAZORPAY_KEY_ID` | Razorpay Test Mode Key ID | `rzp_test_...` |
 | `RAZORPAY_KEY_SECRET` | Razorpay Test Mode Key Secret | Secret string |
 | `RAZORPAY_WEBHOOK_SECRET` | Secret configured in Razorpay Dashboard for webhook signatures | Webhook secret string |
-| `GEMINI_API_KEY` | Google AI Studio Gemini API Key | API key string |
+| `GEMINI_API_KEY_1` | Primary Google Gemini API key (Required or legacy GEMINI_API_KEY) | API key string |
+| `GEMINI_API_KEY_2` | Secondary Google Gemini API key (Optional failover slot) | API key string |
+| `GEMINI_API_KEY_3` | Tertiary Google Gemini API key (Optional failover slot) | API key string |
+| `GEMINI_API_KEY` | Backward-compatible fallback if `GEMINI_API_KEY_1` is unset | API key string |
 | `GEMINI_MODEL` | Gemini model variant | `gemini-3.6-flash` |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile server verification secret | `0x4AAAAAA...` |
 
@@ -79,9 +82,9 @@ Render Web Service (Django Channels + Uvicorn)
    - **Environment**: `Python`
    - **Build Command**: `pip install -r backend/requirements.txt`
    - **Start Command**: `cd backend && PYTHONPATH=. python -m uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT`
-   - **Health Check Path**: `/health/`
+   - **Health Check Path**: `/api/health/`
 3. Add the required environment variables under the **Environment** tab.
-4. Deploy the service and verify `/health/` returns `200 OK`.
+4. Deploy the service and verify `/api/health/` returns `200 OK`.
 
 ### Step 3: Vercel Frontend
 1. Import the repository into Vercel.
@@ -108,9 +111,9 @@ Render Web Service (Django Channels + Uvicorn)
 
 ## 4. Verification & Health Probes
 
-### Liveness Probe
+### Liveness Probe (Canonical: `/api/health/`, Alias: `/health/`)
 ```bash
-curl -I https://revenueos-backend.onrender.com/health/
+curl -I https://revenueos-backend.onrender.com/api/health/
 # HTTP/1.1 200 OK
 # Content-Type: application/json
 ```

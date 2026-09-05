@@ -157,7 +157,7 @@ class RecoveryBrainOutput(GeminiBrainRecommendation):
     is_fallback: bool = False
     fallback_reason: str | None = None
     latency_ms: float | None = None
-    telemetry: dict[str, float] | None = None
+    telemetry: dict[str, Any] | None = None
 
 
 class DecisionContextEnvelope(BaseModel):

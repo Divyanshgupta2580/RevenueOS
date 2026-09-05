@@ -51,7 +51,7 @@ This guide details the production deployment topology, environment configuration
   ```bash
   uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT --workers 1 --lifespan on
   ```
-- **Health Check Path:** `/health/`
+- **Health Check Path:** `/api/health/`
 - **Port:** Render dynamically assigns `$PORT`. The backend binds to `0.0.0.0:$PORT`.
 
 ### 2.3 Frontend: Vercel
@@ -76,14 +76,19 @@ This guide details the production deployment topology, environment configuration
 | `RAZORPAY_KEY_ID` | Render | Secret | Razorpay Test API Key ID (`rzp_test_...`). |
 | `RAZORPAY_KEY_SECRET` | Render | Secret | Razorpay Test API Secret. |
 | `RAZORPAY_WEBHOOK_SECRET` | Render | Secret | HMAC secret for verifying incoming webhooks. |
-| `GEMINI_API_KEY` | Render | Secret | Google Gemini GenAI API Key. |
+| `GEMINI_API_KEY_1` | Render | Secret | Primary Google Gemini API key (Required or legacy GEMINI_API_KEY). |
+| `GEMINI_API_KEY_2` | Render | Secret | Secondary Google Gemini API key (Optional failover slot). |
+| `GEMINI_API_KEY_3` | Render | Secret | Tertiary Google Gemini API key (Optional failover slot). |
+| `GEMINI_API_KEY` | Render | Secret | Backward-compatible fallback if `GEMINI_API_KEY_1` is unset. |
 | `GEMINI_MODEL` | Render | Public | Selected model (default: `gemini-3.6-flash`). |
 | `TURNSTILE_SECRET_KEY` | Render | Secret | Cloudflare Turnstile Server Secret for `/siteverify`. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Vercel | Public | Cloudflare Turnstile Client Site Key. |
 | `NEXT_PUBLIC_API_ORIGIN` | Vercel | Public | Backend base URL (e.g., `https://revenueos-backend.onrender.com`). |
 | `NEXT_PUBLIC_WS_URL` | Vercel | Public | Backend WebSocket URL (e.g., `wss://revenueos-backend.onrender.com/ws/v1/app/`). |
 
-> **Critical Rule:** Never define any API keys, database credentials, or gateway secrets under `NEXT_PUBLIC_*`. Only client-safe origins and public site keys may be placed in the frontend bundle.
+> **Critical Security Rule:** Never define any API keys, database credentials, or gateway secrets under `NEXT_PUBLIC_*`. Only client-safe origins and public site keys may be placed in the frontend bundle.
+
+> **Important Quota Note:** Google Gemini rate limits and daily quotas (e.g., 20 requests/day on `gemini-3.6-flash` free tier) apply at the Google Cloud Project level. If multiple keys belong to the same GCP project, they share that project's quota. To achieve true quota expansion, configure keys generated across distinct Google Cloud projects. Automatic failover additionally protects against single-key invalidations and transient network failures.
 
 ---
 
@@ -102,14 +107,14 @@ This guide details the production deployment topology, environment configuration
 4. Set Build Command: `pip install --no-cache-dir -r requirements.txt`
 5. Set Start Command: `uvicorn revenueos.asgi:application --host 0.0.0.0 --port $PORT --workers 1`
 6. Populate all Render environment variables from Section 3.
-7. Configure Health Check Path to `/health/`.
+7. Configure Health Check Path to `/api/health/`.
 8. Trigger deployment and verify logs show:
    ```
    INFO: Uvicorn running on http://0.0.0.0:10000 (Press CTRL+C to quit)
    ```
 9. Verify via curl:
    ```bash
-   curl -i https://your-backend.onrender.com/health/
+   curl -i https://your-backend.onrender.com/api/health/
    # Returns HTTP 200 {"status": "healthy", "service": "RevenueOS Backend"}
    ```
 
